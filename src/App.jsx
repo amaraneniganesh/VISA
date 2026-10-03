@@ -830,8 +830,9 @@ export default function App() {
       }
 
       const params = new URLSearchParams({
-        encryptedUrl: encryptedUrl || '',
+        encryptedUrl: encryptedUrl ? encodeURIComponent(encryptedUrl) : '',
         pid: songPid || '',
+        id: songPid || song.id || '',
         token: song.token || '',
         bitrate: chosenBitrate,
         languages: languagesQuery
