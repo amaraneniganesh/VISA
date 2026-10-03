@@ -185,7 +185,18 @@ export default function App() {
         const likesData = await likesRes.json();
         const map = {};
         likesData.forEach((item) => {
-          map[item.songId] = item.songData;
+          map[item.songId] = item.songData || {
+            id: item.songId,
+            songId: item.songId,
+            title: item.title,
+            subtitle: item.subtitle,
+            image: item.image,
+            perma_url: item.perma_url,
+            language: item.language,
+            year: item.year,
+            explicit_content: item.explicit_content,
+            more_info: item.more_info || {}
+          };
         });
         setFavorites(map);
       }
