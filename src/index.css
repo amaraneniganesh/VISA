@@ -1,0 +1,218 @@
+@import "tailwindcss";
+
+@layer utilities {
+  /* Glassmorphism background presets */
+  .glass-panel {
+    background: rgba(15, 20, 32, 0.65);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .glass-card {
+    background: rgba(21, 28, 44, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .glass-card:hover {
+    background: rgba(30, 41, 59, 0.75);
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: 0 10px 30px -10px rgba(16, 185, 129, 0.25), 0 0 20px 0 rgba(6, 182, 212, 0.15);
+    transform: translateY(-3px);
+  }
+
+  .glass-input {
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* Neon Glow Effects */
+  .neon-glow-emerald {
+    box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.5);
+  }
+
+  .neon-glow-cyan {
+    box-shadow: 0 0 25px -5px rgba(6, 182, 212, 0.5);
+  }
+
+  .neon-glow-violet {
+    box-shadow: 0 0 25px -5px rgba(139, 92, 246, 0.5);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 12px rgba(16, 185, 129, 0.6);
+  }
+}
+
+/* Base Body Styles */
+body {
+  background-color: #07090e;
+  color: #f1f5f9;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(10, 14, 23, 0.8);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(51, 65, 85, 0.6);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 185, 129, 0.7);
+}
+
+/* Custom Audio Scrub Range Slider */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(51, 65, 85, 0.5);
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #10b981;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.8);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: #10b981;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.8);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+@media (max-width: 640px) {
+  input[type="range"]::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+input[type="range"]:hover::-webkit-slider-thumb,
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.35);
+  background: #34d399;
+}
+
+input[type="range"]:hover::-moz-range-thumb,
+input[type="range"]:active::-moz-range-thumb {
+  transform: scale(1.35);
+  background: #34d399;
+}
+
+/* Custom Equalizer Bar Animations */
+@keyframes eq-dance-1 {
+  0%, 100% { height: 4px; }
+  50% { height: 16px; }
+}
+@keyframes eq-dance-2 {
+  0%, 100% { height: 16px; }
+  50% { height: 6px; }
+}
+@keyframes eq-dance-3 {
+  0%, 100% { height: 8px; }
+  50% { height: 20px; }
+}
+@keyframes eq-dance-4 {
+  0%, 100% { height: 18px; }
+  50% { height: 5px; }
+}
+
+.eq-bar-1 { animation: eq-dance-1 0.75s ease-in-out infinite; }
+.eq-bar-2 { animation: eq-dance-2 0.6s ease-in-out infinite; }
+.eq-bar-3 { animation: eq-dance-3 0.85s ease-in-out infinite; }
+.eq-bar-4 { animation: eq-dance-4 0.7s ease-in-out infinite; }
+
+/* Vinyl Record Spin Animation */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 12s linear infinite;
+}
+
+/* Music Beam Pulse Glow */
+@keyframes beam-pulse {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(1);
+    filter: blur(25px);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.08);
+    filter: blur(35px);
+  }
+}
+
+.animate-beam-pulse {
+  animation: beam-pulse 4s ease-in-out infinite;
+}
+
+/* Shimmer Loading Skeleton Animation */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.animate-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.animate-shimmer::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.06) 20%,
+    rgba(255, 255, 255, 0.12) 60%,
+    rgba(255, 255, 255, 0)
+  );
+  animation: shimmer 2s infinite;
+  content: '';
+}
+
+/* Hide Scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
