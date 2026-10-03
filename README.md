@@ -60,7 +60,7 @@ VISA Music is a state-of-the-art, high-performance web music streaming applicati
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/saiganesh1745/VISA.git
+git clone https://github.com/amaraneniganesh/VISA.git
 cd VISA
 npm install
 ```
