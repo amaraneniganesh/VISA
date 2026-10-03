@@ -46,20 +46,20 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, onLoginSucce
     setErrorMsg('');
     setLoading(true);
 
-    const endpoint = mode === 'login' ? 'http://localhost:5000/api/auth/login' : 'http://localhost:5000/api/auth/register';
+    const endpoint = mode === 'login' ? ' https://visa-server-7qzv.onrender.com/api/auth/login' : ' https://visa-server-7qzv.onrender.com/api/auth/register';
 
     try {
       const payload =
         mode === 'login'
           ? { email: formData.email, password: formData.password }
           : {
-              name: formData.name,
-              email: formData.email,
-              phone: formData.phone,
-              password: formData.password,
-              avatar: formData.avatar,
-              preferredLanguages: formData.preferredLanguages
-            };
+            name: formData.name,
+            email: formData.email,
+            phone: formData.phone,
+            password: formData.password,
+            avatar: formData.avatar,
+            preferredLanguages: formData.preferredLanguages
+          };
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -122,9 +122,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, onLoginSucce
               setMode('login');
               setErrorMsg('');
             }}
-            className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${
-              mode === 'login' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
-            }`}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${mode === 'login' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
+              }`}
           >
             Log In
           </button>
@@ -134,9 +133,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, onLoginSucce
               setMode('register');
               setErrorMsg('');
             }}
-            className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${
-              mode === 'register' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
-            }`}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${mode === 'register' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
+              }`}
           >
             Register
           </button>
@@ -249,11 +247,10 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, onLoginSucce
                         type="button"
                         key={lang}
                         onClick={() => handleLangToggle(lang)}
-                        className={`text-[11px] font-bold px-2.5 py-1 rounded-xl uppercase transition ${
-                          isSelected
+                        className={`text-[11px] font-bold px-2.5 py-1 rounded-xl uppercase transition ${isSelected
                             ? 'bg-emerald-500 text-slate-950 shadow-sm'
                             : 'bg-slate-800 text-slate-400 hover:text-white'
-                        }`}
+                          }`}
                       >
                         {lang}
                       </button>

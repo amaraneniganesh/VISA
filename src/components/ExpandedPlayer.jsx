@@ -112,7 +112,7 @@ export default function ExpandedPlayer({
         const title = encodeURIComponent(currentTrack.title || '');
         const artist = encodeURIComponent(currentTrack.subtitle || currentTrack.artist || '');
         const res = await fetch(
-          `http://localhost:5000/api/lyrics?lyrics_id=${lyricsId}&title=${title}&artist=${artist}`
+          ` https://visa-server-7qzv.onrender.com/api/lyrics?lyrics_id=${lyricsId}&title=${title}&artist=${artist}`
         );
         const data = await res.json();
         if (!isMounted) return;
@@ -234,11 +234,10 @@ export default function ExpandedPlayer({
                   key={t.id}
                   onClick={() => setActiveTab(t.id)}
                   aria-pressed={active}
-                  className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition ${
-                    active
+                  className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition ${active
                       ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25'
                       : 'text-slate-400 hover:text-white'
-                  }`}
+                    }`}
                 >
                   <Icon className="h-3.5 w-3.5" />
                   {t.label}
@@ -252,11 +251,10 @@ export default function ExpandedPlayer({
             onClick={onOpenDevicePicker}
             aria-label={`Output device: ${deviceName}`}
             title="Switch audio output"
-            className={`${iconBtn} h-10 shrink-0 gap-1.5 border px-3 text-xs font-bold ${
-              deviceActive
+            className={`${iconBtn} h-10 shrink-0 gap-1.5 border px-3 text-xs font-bold ${deviceActive
                 ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
                 : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
-            }`}
+              }`}
           >
             <DeviceIcon className="h-4 w-4" />
             <span className="hidden max-w-[110px] truncate md:inline">{deviceName}</span>
@@ -276,9 +274,8 @@ export default function ExpandedPlayer({
                 key={t.id}
                 onClick={() => setActiveTab(t.id)}
                 aria-pressed={active}
-                className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
-                  active ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25' : 'text-slate-400'
-                }`}
+                className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${active ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25' : 'text-slate-400'
+                  }`}
               >
                 <Icon className="h-3.5 w-3.5" />
                 {t.label}
@@ -303,11 +300,10 @@ export default function ExpandedPlayer({
                     key={m.id}
                     onClick={() => setVisualizerMode(m.id)}
                     aria-pressed={active}
-                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold transition sm:px-4 sm:text-xs ${
-                      active
+                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold transition sm:px-4 sm:text-xs ${active
                         ? 'bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 shadow-md shadow-cyan-500/20'
                         : 'text-slate-400 hover:text-white'
-                    }`}
+                      }`}
                   >
                     <Icon className="h-3.5 w-3.5" />
                     {m.label}
@@ -484,11 +480,10 @@ export default function ExpandedPlayer({
                   <li key={`${track.id}_${idx}`} ref={current ? activeRowRef : null}>
                     <button
                       onClick={() => onPlayQueueTrack(idx)}
-                      className={`flex w-full items-center gap-3 rounded-2xl border p-2.5 text-left transition active:scale-[0.99] ${
-                        current
+                      className={`flex w-full items-center gap-3 rounded-2xl border p-2.5 text-left transition active:scale-[0.99] ${current
                           ? 'border-emerald-500/40 bg-emerald-500/15'
                           : 'border-transparent hover:bg-white/5'
-                      }`}
+                        }`}
                     >
                       <span className="w-5 shrink-0 text-center text-xs font-bold text-slate-500">
                         {current && isPlaying ? (
@@ -555,9 +550,8 @@ export default function ExpandedPlayer({
                 onClick={toggleShuffle}
                 aria-label="Shuffle"
                 aria-pressed={isShuffle}
-                className={`${iconBtn} h-10 w-10 ${
-                  isShuffle ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-400 hover:text-white'
-                }`}
+                className={`${iconBtn} h-10 w-10 ${isShuffle ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-400 hover:text-white'
+                  }`}
               >
                 <Shuffle className="h-5 w-5" />
               </button>
@@ -596,9 +590,8 @@ export default function ExpandedPlayer({
                 onClick={toggleRepeatMode}
                 aria-label="Repeat"
                 aria-pressed={repeatMode !== 'off'}
-                className={`${iconBtn} h-10 w-10 ${
-                  repeatMode !== 'off' ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-400 hover:text-white'
-                }`}
+                className={`${iconBtn} h-10 w-10 ${repeatMode !== 'off' ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-400 hover:text-white'
+                  }`}
               >
                 {repeatMode === 'one' ? <Repeat1 className="h-5 w-5" /> : <Repeat className="h-5 w-5" />}
               </button>
@@ -610,11 +603,10 @@ export default function ExpandedPlayer({
                 onClick={() => toggleFavorite(currentTrack)}
                 aria-label="Favorite"
                 aria-pressed={isFavorite}
-                className={`${iconBtn} h-10 w-10 border ${
-                  isFavorite
+                className={`${iconBtn} h-10 w-10 border ${isFavorite
                     ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-400'
                     : 'border-white/10 bg-white/5 text-slate-300 hover:text-white'
-                }`}
+                  }`}
               >
                 <Heart className={`h-[18px] w-[18px] ${isFavorite ? 'fill-current' : ''}`} />
               </button>

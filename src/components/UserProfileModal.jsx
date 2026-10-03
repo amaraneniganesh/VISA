@@ -104,7 +104,7 @@ export default function UserProfileModal({ isOpen, onClose, user, token, onUpdat
     if (!token) return;
     setAnalyticsLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/analytics/user', {
+      const res = await fetch(' https://visa-server-7qzv.onrender.com/api/analytics/user', {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
@@ -154,7 +154,7 @@ export default function UserProfileModal({ isOpen, onClose, user, token, onUpdat
     setLoading(true);
     setMsg('');
     try {
-      const res = await fetch('http://localhost:5000/api/auth/profile', {
+      const res = await fetch(' https://visa-server-7qzv.onrender.com/api/auth/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -181,7 +181,7 @@ export default function UserProfileModal({ isOpen, onClose, user, token, onUpdat
 
   const handleDelete = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/auth/account', {
+      const res = await fetch(' https://visa-server-7qzv.onrender.com/api/auth/account', {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -243,11 +243,10 @@ export default function UserProfileModal({ isOpen, onClose, user, token, onUpdat
           {msg && (
             <div
               role="status"
-              className={`flex items-start gap-2 rounded-2xl border p-3 text-xs ${
-                isError
+              className={`flex items-start gap-2 rounded-2xl border p-3 text-xs ${isError
                   ? 'border-pink-500/40 bg-pink-500/15 text-pink-300'
                   : 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-              }`}
+                }`}
             >
               {isError ? (
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -343,13 +342,12 @@ export default function UserProfileModal({ isOpen, onClose, user, token, onUpdat
                           className="flex items-center gap-2.5 rounded-2xl border border-slate-800/80 bg-slate-950/70 p-2"
                         >
                           <span
-                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-black ${
-                              idx === 0
+                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-black ${idx === 0
                                 ? 'bg-amber-400 text-slate-950'
                                 : idx === 1
-                                ? 'bg-slate-300 text-slate-950'
-                                : 'bg-amber-700/60 text-amber-100'
-                            }`}
+                                  ? 'bg-slate-300 text-slate-950'
+                                  : 'bg-amber-700/60 text-amber-100'
+                              }`}
                           >
                             {idx + 1}
                           </span>
@@ -451,11 +449,10 @@ export default function UserProfileModal({ isOpen, onClose, user, token, onUpdat
                       key={lang}
                       onClick={() => handleLangToggle(lang)}
                       aria-pressed={selected}
-                      className={`h-9 rounded-full px-3.5 text-xs font-bold capitalize transition active:scale-95 ${
-                        selected
+                      className={`h-9 rounded-full px-3.5 text-xs font-bold capitalize transition active:scale-95 ${selected
                           ? 'bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20'
                           : 'bg-slate-800 text-slate-400 hover:text-white'
-                      }`}
+                        }`}
                     >
                       {lang}
                     </button>

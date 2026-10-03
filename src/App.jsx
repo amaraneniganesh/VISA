@@ -38,7 +38,7 @@ import {
   Sparkles
 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = ' https://visa-server-7qzv.onrender.com/api';
 
 const ALL_LANGUAGES = [
   'telugu',
@@ -446,7 +446,7 @@ export default function App() {
           const next = prev + 1;
           try {
             localStorage.setItem('visa_guest_time', String(next));
-          } catch {}
+          } catch { }
 
           if (next >= 900) {
             audioRef.current.pause();
@@ -670,7 +670,7 @@ export default function App() {
           body: JSON.stringify({ query: queryToUse })
         });
         setSearchHistory((prev) => Array.from(new Set([queryToUse, ...prev])));
-      } catch {}
+      } catch { }
     }
 
     try {
@@ -882,7 +882,7 @@ export default function App() {
               songDetails,
               ...prev.filter((item) => (item.id || item._id) !== songDetails.id)
             ]);
-          } catch {}
+          } catch { }
         }
       } else {
         showToast('Unable to resolve audio stream for track');
@@ -1312,11 +1312,10 @@ export default function App() {
                         <button
                           key={langCode}
                           onClick={() => setSpotlightLang(langCode)}
-                          className={`text-xs px-3 py-1.5 rounded-full font-bold uppercase transition shrink-0 ${
-                            isSel
+                          className={`text-xs px-3 py-1.5 rounded-full font-bold uppercase transition shrink-0 ${isSel
                               ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
                               : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
-                          }`}
+                            }`}
                         >
                           {langCode === 'all' ? 'All Languages' : langCode}
                         </button>
@@ -1340,11 +1339,10 @@ export default function App() {
                     <button
                       key={cat.id}
                       onClick={() => setSpotlightCategory(cat.id)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition shrink-0 ${
-                        isSel
+                      className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold transition shrink-0 ${isSel
                           ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 shadow-lg shadow-emerald-500/20'
                           : 'bg-slate-900/90 border border-slate-800 text-slate-400 hover:text-white'
-                      }`}
+                        }`}
                     >
                       <Icon className="w-4 h-4" />
                       <span>{cat.label}</span>
@@ -1359,8 +1357,8 @@ export default function App() {
                   spotlightLang === 'all'
                     ? footerDetails?.all || footerDetails
                     : footerDetails?.byLanguage?.find(
-                        (e) => e.language.toLowerCase() === spotlightLang.toLowerCase()
-                      ) || footerDetails?.all;
+                      (e) => e.language.toLowerCase() === spotlightLang.toLowerCase()
+                    ) || footerDetails?.all;
 
                 const rawItems = source ? source[spotlightCategory] || [] : [];
                 const items = sortItems(rawItems, sortOption);
@@ -1390,8 +1388,8 @@ export default function App() {
                             spotlightCategory === 'artists'
                               ? 'artist'
                               : spotlightCategory === 'albums'
-                              ? 'album'
-                              : 'playlist'
+                                ? 'album'
+                                : 'playlist'
                         }}
                         onCardClick={openDetails}
                         onPlaySong={openDetails}
@@ -1419,11 +1417,10 @@ export default function App() {
                   <button
                     key={yr}
                     onClick={() => setSelectedYear(yr)}
-                    className={`text-xs px-3.5 py-1.5 rounded-xl font-bold transition shrink-0 ${
-                      selectedYear === yr
+                    className={`text-xs px-3.5 py-1.5 rounded-xl font-bold transition shrink-0 ${selectedYear === yr
                         ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 shadow-md ring-1 ring-emerald-400'
                         : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
-                    }`}
+                      }`}
                   >
                     {yr}
                   </button>
@@ -1625,21 +1622,21 @@ export default function App() {
                         key={song.id || `liked_${idx}`}
                         song={song}
                         index={idx}
-                      onPlay={() => handlePlaySongFromList(likedTracksList, idx)}
-                      onAddToQueue={handleAddToQueue}
-                      onToggleFavorite={toggleFavorite}
-                      onOpenAddToPlaylist={(songItem) => {
-                        setSelectedSongForPlaylist(songItem);
-                        setIsPlaylistModalOpen(true);
-                      }}
-                      isFavorite={true}
-                      currentTrack={currentTrack}
-                      isPlaying={isPlaying}
-                      isResolvingAudio={isResolvingAudio}
-                      upgradeImg={upgradeImg}
-                      formatSeconds={formatSeconds}
-                    />
-                  ))}
+                        onPlay={() => handlePlaySongFromList(likedTracksList, idx)}
+                        onAddToQueue={handleAddToQueue}
+                        onToggleFavorite={toggleFavorite}
+                        onOpenAddToPlaylist={(songItem) => {
+                          setSelectedSongForPlaylist(songItem);
+                          setIsPlaylistModalOpen(true);
+                        }}
+                        isFavorite={true}
+                        currentTrack={currentTrack}
+                        isPlaying={isPlaying}
+                        isResolvingAudio={isResolvingAudio}
+                        upgradeImg={upgradeImg}
+                        formatSeconds={formatSeconds}
+                      />
+                    ))}
                 </div>
               )}
             </div>

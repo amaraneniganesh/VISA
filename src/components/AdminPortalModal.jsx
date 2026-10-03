@@ -18,7 +18,7 @@ export default function AdminPortalModal({ isOpen, onClose, token, onToast }) {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/admin/users', {
+      const res = await fetch(' https://visa-server-7qzv.onrender.com/api/admin/users', {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
@@ -41,7 +41,7 @@ export default function AdminPortalModal({ isOpen, onClose, token, onToast }) {
     setActionLoading(true);
 
     try {
-      const res = await fetch('http://localhost:5000/api/admin/suspend', {
+      const res = await fetch(' https://visa-server-7qzv.onrender.com/api/admin/suspend', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -70,7 +70,7 @@ export default function AdminPortalModal({ isOpen, onClose, token, onToast }) {
 
   const handleUnsuspend = async (userId, name) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/unsuspend/${userId}`, {
+      const res = await fetch(` https://visa-server-7qzv.onrender.com/api/admin/unsuspend/${userId}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -88,7 +88,7 @@ export default function AdminPortalModal({ isOpen, onClose, token, onToast }) {
     if (!window.confirm(`Are you sure you want to permanently delete user "${name}"?`)) return;
 
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/users/${userId}`, {
+      const res = await fetch(` https://visa-server-7qzv.onrender.com/api/admin/users/${userId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -294,9 +294,8 @@ export default function AdminPortalModal({ isOpen, onClose, token, onToast }) {
                         setSuspendUnit('days');
                         setSuspendValue('7');
                       }}
-                      className={`p-2 rounded-xl font-bold border transition text-center ${
-                        suspendUnit === 'days' ? 'bg-pink-500 text-white border-pink-400' : 'bg-slate-900 border-slate-800 text-slate-400'
-                      }`}
+                      className={`p-2 rounded-xl font-bold border transition text-center ${suspendUnit === 'days' ? 'bg-pink-500 text-white border-pink-400' : 'bg-slate-900 border-slate-800 text-slate-400'
+                        }`}
                     >
                       Days
                     </button>
@@ -306,9 +305,8 @@ export default function AdminPortalModal({ isOpen, onClose, token, onToast }) {
                         setSuspendUnit('months');
                         setSuspendValue('1');
                       }}
-                      className={`p-2 rounded-xl font-bold border transition text-center ${
-                        suspendUnit === 'months' ? 'bg-pink-500 text-white border-pink-400' : 'bg-slate-900 border-slate-800 text-slate-400'
-                      }`}
+                      className={`p-2 rounded-xl font-bold border transition text-center ${suspendUnit === 'months' ? 'bg-pink-500 text-white border-pink-400' : 'bg-slate-900 border-slate-800 text-slate-400'
+                        }`}
                     >
                       Months
                     </button>
@@ -318,9 +316,8 @@ export default function AdminPortalModal({ isOpen, onClose, token, onToast }) {
                         setSuspendUnit('permanent');
                         setSuspendValue('0');
                       }}
-                      className={`p-2 rounded-xl font-bold border transition text-center ${
-                        suspendUnit === 'permanent' ? 'bg-pink-500 text-white border-pink-400' : 'bg-slate-900 border-slate-800 text-slate-400'
-                      }`}
+                      className={`p-2 rounded-xl font-bold border transition text-center ${suspendUnit === 'permanent' ? 'bg-pink-500 text-white border-pink-400' : 'bg-slate-900 border-slate-800 text-slate-400'
+                        }`}
                     >
                       Permanent
                     </button>

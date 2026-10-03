@@ -45,7 +45,7 @@ export default function AddToPlaylistModal({
     setErrorMsg('');
 
     try {
-      const res = await fetch('http://localhost:5000/api/playlists/add-song', {
+      const res = await fetch(' https://visa-server-7qzv.onrender.com/api/playlists/add-song', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -148,11 +148,10 @@ export default function AddToPlaylistModal({
                   <div
                     key={pl._id}
                     onClick={() => handleAddToPlaylist(pl._id)}
-                    className={`flex items-center justify-between p-3 rounded-2xl transition cursor-pointer group ${
-                      isAlreadyInPlaylist
+                    className={`flex items-center justify-between p-3 rounded-2xl transition cursor-pointer group ${isAlreadyInPlaylist
                         ? 'bg-emerald-500/10 border border-emerald-500/40'
                         : 'bg-slate-900/60 border border-slate-800 hover:border-emerald-500/40 hover:bg-slate-900'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-9 h-9 rounded-xl bg-slate-800 text-slate-400 flex items-center justify-center shrink-0 font-bold text-xs overflow-hidden">
@@ -163,9 +162,8 @@ export default function AddToPlaylistModal({
                         )}
                       </div>
                       <div className="truncate">
-                        <p className={`text-xs sm:text-sm font-bold truncate ${
-                          isAlreadyInPlaylist ? 'text-emerald-400' : 'text-slate-200 group-hover:text-emerald-300'
-                        }`}>
+                        <p className={`text-xs sm:text-sm font-bold truncate ${isAlreadyInPlaylist ? 'text-emerald-400' : 'text-slate-200 group-hover:text-emerald-300'
+                          }`}>
                           {pl.name}
                         </p>
                         <p className="text-[10px] text-slate-400">{pl.songs?.length || 0} Tracks</p>
