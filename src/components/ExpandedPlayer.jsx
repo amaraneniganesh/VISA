@@ -24,7 +24,9 @@ import {
   Loader2,
   Copy,
   Check,
-  Globe
+  Globe,
+  AlignLeft,
+  RefreshCw
 } from 'lucide-react';
 import AudioVisualizer from './AudioVisualizer';
 import { decodeHTMLEntities, formatPlayCount } from '../utils/formatters';
@@ -59,8 +61,8 @@ export default function ExpandedPlayer({
   currentTime,
   duration,
   handleSeek,
-  handleSkipBackward,
-  handleSkipForward,
+  handleSkipBackward: _handleSkipBackward,
+  handleSkipForward: _handleSkipForward,
   handlePrevTrack,
   handleNextTrack,
   togglePlayPause,
@@ -69,7 +71,7 @@ export default function ExpandedPlayer({
   handleVolumeChange,
   handleToggleMute,
   bitrate,
-  handleBitrateChange,
+  handleBitrateChange: _handleBitrateChange,
   isShuffle,
   toggleShuffle,
   repeatMode,
@@ -81,7 +83,7 @@ export default function ExpandedPlayer({
   queue = [],
   queueIndex = -1,
   onPlayQueueTrack,
-  onPlaySong,
+  onPlaySong: _onPlaySong,
   formatSeconds,
   upgradeImg,
   audioRef,
@@ -95,7 +97,13 @@ export default function ExpandedPlayer({
   const [isLyricsLoading, setIsLyricsLoading] = useState(false);
   const [lyricsError, setLyricsError] = useState(null);
   const [copiedLyrics, setCopiedLyrics] = useState(false);
+  const [lyricsViewMode, setLyricsViewMode] = useState('synced'); // 'synced' | 'sheet'
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
+
   const activeRowRef = useRef(null);
+  const lineRefs = useRef({});
+  const lyricsContainerRef = useRef(null);
+  const scrollTimeoutRef = useRef(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -109,22 +117,30 @@ export default function ExpandedPlayer({
       setLyricsError(null);
       try {
         const lyricsId = encodeURIComponent(currentTrack.id || '');
-        const title = encodeURIComponent(currentTrack.title || '');
-        const artist = encodeURIComponent(currentTrack.subtitle || currentTrack.artist || '');
+        const titleParam = encodeURIComponent(currentTrack.title || '');
+        const artistParam = encodeURIComponent(
+          currentTrack.subtitle || currentTrack.artist || currentTrack.more_info?.music || ''
+        );
+        const durParam = encodeURIComponent(duration || currentTrack.more_info?.duration || '');
+
+        const apiHost = window.location.origin.includes('localhost')
+          ? 'http://localhost:5000/api'
+          : 'https://visa-server-7qzv.onrender.com/api';
+
         const res = await fetch(
-          ` https://visa-server-7qzv.onrender.com/api/lyrics?lyrics_id=${lyricsId}&title=${title}&artist=${artist}`
+          `${apiHost}/lyrics?lyrics_id=${lyricsId}&title=${titleParam}&artist=${artistParam}&duration=${durParam}`
         );
         const data = await res.json();
         if (!isMounted) return;
 
-        if (data.success && data.lyrics) {
+        if (data.success && (data.lyrics || data.syncedLyrics)) {
           setLyricsData(data);
           setLyricsError(null);
         } else {
           setLyricsError(data.error || 'Lyrics not available for this song');
           setLyricsData(null);
         }
-      } catch (err) {
+      } catch (_err) {
         if (isMounted) {
           setLyricsError('Unable to fetch lyrics at this time');
           setLyricsData(null);
@@ -138,7 +154,14 @@ export default function ExpandedPlayer({
     return () => {
       isMounted = false;
     };
-  }, [currentTrack?.id, currentTrack?.title, currentTrack?.subtitle]);
+  }, [
+    currentTrack?.id,
+    currentTrack?.title,
+    currentTrack?.subtitle,
+    currentTrack?.artist,
+    currentTrack?.more_info?.music,
+    duration
+  ]);
 
   // Scroll the playing row into view when the queue opens
   useEffect(() => {
@@ -151,6 +174,122 @@ export default function ExpandedPlayer({
     () => (lyricsData?.lyrics ? decodeHTMLEntities(lyricsData.lyrics.replace(/<br\s*\/?>/gi, '\n')) : ''),
     [lyricsData]
   );
+
+  // Parse LRC timestamped lyrics OR generate auto-paced synced lines
+  const parsedLyrics = useMemo(() => {
+    if (!lyricsData) return [];
+
+    const rawLrc =
+      lyricsData.syncedLyrics ||
+      (lyricsData.lyrics && lyricsData.lyrics.includes('[') ? lyricsData.lyrics : null);
+
+    if (rawLrc) {
+      const cleanText = rawLrc.replace(/<br\s*\/?>/gi, '\n');
+      const rawLines = cleanText.split(/\r?\n/);
+      const items = [];
+      const timeRegex = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
+
+      for (const rawLine of rawLines) {
+        const matches = [...rawLine.matchAll(timeRegex)];
+        if (matches.length > 0) {
+          const text = rawLine
+            .replace(/\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/g, '')
+            .replace(/<[^>]*>/g, '')
+            .trim();
+          for (const m of matches) {
+            const mins = parseInt(m[1], 10);
+            const secs = parseInt(m[2], 10);
+            const ms = m[3] ? parseInt(m[3].padEnd(3, '0').slice(0, 3), 10) : 0;
+            const timeVal = mins * 60 + secs + ms / 1000;
+            if (text || rawLine.includes(']')) {
+              items.push({
+                id: items.length,
+                time: Number(timeVal.toFixed(2)),
+                text: text || '♪ ♪ ♪'
+              });
+            }
+          }
+        }
+      }
+      items.sort((a, b) => a.time - b.time);
+      if (items.length > 0) return items;
+    }
+
+    // Fallback: Plain text line-by-line auto-paced timing across duration
+    if (lyricsData.lyrics) {
+      const plainText = decodeHTMLEntities(lyricsData.lyrics.replace(/<br\s*\/?>/gi, '\n'));
+      const lines = plainText
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+
+      if (lines.length === 0) return [];
+
+      const totalDuration = duration && duration > 10 ? duration : 180;
+      const startOffset = Math.min(6, totalDuration * 0.04);
+      const endMargin = 8;
+      const usableTime = Math.max(10, totalDuration - startOffset - endMargin);
+      const interval = usableTime / lines.length;
+
+      return lines.map((text, idx) => ({
+        id: idx,
+        time: Number((startOffset + idx * interval).toFixed(2)),
+        text,
+        isEstimated: true
+      }));
+    }
+
+    return [];
+  }, [lyricsData, duration]);
+
+  // Determine current active lyric line based on playback time
+  const activeLineIndex = useMemo(() => {
+    if (!parsedLyrics || parsedLyrics.length === 0) return -1;
+    let active = -1;
+    for (let i = 0; i < parsedLyrics.length; i++) {
+      if (currentTime >= parsedLyrics[i].time) {
+        active = i;
+      } else {
+        break;
+      }
+    }
+    return active;
+  }, [parsedLyrics, currentTime]);
+
+  // Auto-scroll active lyric line into center view
+  useEffect(() => {
+    if (
+      activeTab === 'lyrics' &&
+      lyricsViewMode === 'synced' &&
+      !isUserScrolling &&
+      activeLineIndex >= 0 &&
+      lineRefs.current[activeLineIndex]
+    ) {
+      lineRefs.current[activeLineIndex].scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      });
+    }
+  }, [activeLineIndex, activeTab, lyricsViewMode, isUserScrolling]);
+
+  const handleLyricsScroll = () => {
+    if (lyricsViewMode !== 'synced') return;
+    setIsUserScrolling(true);
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      setIsUserScrolling(false);
+    }, 4000);
+  };
+
+  const handleResyncLyrics = () => {
+    setIsUserScrolling(false);
+    if (activeLineIndex >= 0 && lineRefs.current[activeLineIndex]) {
+      lineRefs.current[activeLineIndex].scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      });
+    }
+  };
 
   const handleCopyLyrics = () => {
     if (!lyricsText) return;
@@ -177,6 +316,7 @@ export default function ExpandedPlayer({
   const year = currentTrack.year || currentTrack.more_info?.year;
   const plays = formatPlayCount(currentTrack.play_count || currentTrack.more_info?.play_count);
   const explicit = currentTrack.explicit_content === '1' || currentTrack.more_info?.explicit_content === '1';
+  const hasLrcExact = Boolean(lyricsData?.hasSynced);
 
   return (
     <div
@@ -312,7 +452,7 @@ export default function ExpandedPlayer({
               })}
             </div>
 
-            {/* Artwork + visualizer — sized by the smaller of width/height so it never overflows */}
+            {/* Artwork + visualizer */}
             <div className="relative flex aspect-square w-[min(84vw,44dvh,380px)] shrink-0 items-center justify-center">
               <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center">
                 <AudioVisualizer audioRef={audioRef} isPlaying={isPlaying} mode={visualizerMode} />
@@ -365,84 +505,226 @@ export default function ExpandedPlayer({
                   </span>
                 )}
               </div>
+
+              {/* Floating Live Synced Lyric Preview in Studio View */}
+              {parsedLyrics.length > 0 && activeLineIndex >= 0 && parsedLyrics[activeLineIndex] && (
+                <div className="pt-2">
+                  <button
+                    onClick={() => setActiveTab('lyrics')}
+                    className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-slate-900/80 px-4 py-2 text-xs font-bold text-slate-200 shadow-xl backdrop-blur-md transition active:scale-95 hover:border-emerald-400 hover:bg-slate-900 group"
+                  >
+                    <span className="relative flex h-2.5 w-2.5 shrink-0 items-center justify-center">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                    </span>
+                    <span className="max-w-[260px] truncate font-extrabold text-emerald-300 sm:max-w-md">
+                      {parsedLyrics[activeLineIndex].text}
+                    </span>
+                    <span className="shrink-0 text-[10px] text-slate-400 group-hover:text-white">
+                      Full Lyrics →
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
           </section>
         )}
 
         {activeTab === 'lyrics' && (
-          <section className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-900/70 shadow-2xl backdrop-blur-md">
-            <div className="flex shrink-0 items-center gap-3 border-b border-white/5 p-3 sm:p-4">
-              <img
-                src={upgradeImg(currentTrack.image)}
-                alt=""
-                className="h-11 w-11 shrink-0 rounded-xl border border-white/10 object-cover"
-              />
-              <div className="min-w-0 flex-1">
-                <h4 className="truncate text-sm font-bold text-slate-100">{title}</h4>
-                <p className="truncate text-xs font-semibold text-emerald-400">{artist}</p>
+          <section className="relative mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-900/75 shadow-2xl backdrop-blur-md">
+            {/* Header controls & song info */}
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-white/5 p-3 sm:p-4">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <img
+                  src={upgradeImg(currentTrack.image)}
+                  alt=""
+                  className="h-11 w-11 shrink-0 rounded-xl border border-white/10 object-cover shadow-md"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="truncate text-sm font-bold text-slate-100">{title}</h4>
+                    {parsedLyrics.length > 0 && (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-extrabold shrink-0 ${
+                          hasLrcExact
+                            ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                            : 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300'
+                        }`}
+                      >
+                        <Sparkles className="h-2.5 w-2.5" />
+                        {hasLrcExact ? 'LRC Synced' : 'Auto Synced'}
+                      </span>
+                    )}
+                  </div>
+                  <p className="truncate text-xs font-semibold text-emerald-400">{artist}</p>
+                </div>
               </div>
-              {lyricsText && (
-                <button
-                  onClick={handleCopyLyrics}
-                  aria-label="Copy lyrics"
-                  className={`${iconBtn} h-9 shrink-0 gap-1.5 border border-white/10 bg-white/5 px-3 text-xs font-bold text-slate-300 hover:bg-white/10`}
-                >
-                  {copiedLyrics ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-emerald-400" />
-                      <span className="text-emerald-400">Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5" />
-                      <span className="hidden xs:inline sm:inline">Copy</span>
-                    </>
-                  )}
-                </button>
-              )}
+
+              {/* View Mode Controls & Copy Button */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {parsedLyrics.length > 0 && (
+                  <div className="flex items-center rounded-xl border border-white/10 bg-slate-950/60 p-1">
+                    <button
+                      onClick={() => setLyricsViewMode('synced')}
+                      title="Live Synced Karaoke Mode"
+                      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                        lyricsViewMode === 'synced'
+                          ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Mic2 className="h-3.5 w-3.5" />
+                      <span className="hidden xs:inline sm:inline">Karaoke</span>
+                    </button>
+                    <button
+                      onClick={() => setLyricsViewMode('sheet')}
+                      title="Full Text Sheet Mode"
+                      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                        lyricsViewMode === 'sheet'
+                          ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <AlignLeft className="h-3.5 w-3.5" />
+                      <span className="hidden xs:inline sm:inline">Sheet</span>
+                    </button>
+                  </div>
+                )}
+
+                {lyricsText && (
+                  <button
+                    onClick={handleCopyLyrics}
+                    aria-label="Copy lyrics"
+                    className={`${iconBtn} h-9 shrink-0 gap-1.5 border border-white/10 bg-white/5 px-3 text-xs font-bold text-slate-300 hover:bg-white/10`}
+                  >
+                    {copiedLyrics ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                        <span className="text-emerald-400">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" />
+                        <span className="hidden xs:inline sm:inline">Copy</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="no-scrollbar min-h-0 flex-1 select-text overflow-y-auto px-4 py-4 sm:px-6">
+            {/* Lyrics display body */}
+            <div
+              ref={lyricsContainerRef}
+              onScroll={handleLyricsScroll}
+              className="no-scrollbar relative min-h-0 flex-1 select-text overflow-y-auto px-4 py-4 sm:px-6"
+            >
               {isLyricsLoading ? (
                 <div className="flex flex-col items-center justify-center gap-3 py-16 text-slate-400">
                   <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
-                  <p className="text-xs font-semibold text-slate-300">Fetching lyrics…</p>
+                  <p className="text-xs font-semibold text-slate-300">Fetching synced lyrics…</p>
                 </div>
-              ) : lyricsText ? (
-                <div className="space-y-2 text-center">
-                  {lyricsText.split('\n').map((line, i) => {
-                    const t = line.trim();
-                    if (!t) return <div key={i} className="h-3" />;
-                    const up = t.toUpperCase();
-                    const isHeader = up.startsWith('HOOK') || up.startsWith('CHORUS') || up.startsWith('VERSE');
-                    return (
-                      <p
-                        key={i}
-                        className={
-                          isHeader
-                            ? 'pt-3 text-xs font-extrabold tracking-widest text-emerald-400'
-                            : 'text-base font-semibold leading-relaxed text-slate-200 sm:text-lg'
-                        }
-                      >
-                        {t}
-                      </p>
-                    );
-                  })}
+              ) : lyricsData && parsedLyrics.length > 0 ? (
+                lyricsViewMode === 'synced' ? (
+                  /* ──── LIVE SYNCED KARAOKE VIEW ──── */
+                  <div className="space-y-4 py-8 text-center sm:py-12">
+                    {parsedLyrics.map((line, i) => {
+                      const isActive = i === activeLineIndex;
+                      const isPast = i < activeLineIndex;
 
-                  {(lyricsData?.provider || lyricsData?.lyrics_copyright) && (
-                    <div className="mt-6 space-y-1 border-t border-white/5 pt-4">
-                      {lyricsData.provider && (
-                        <p className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-cyan-400/90">
-                          <Globe className="h-3.5 w-3.5" />
-                          Source: {lyricsData.provider}
+                      return (
+                        <div
+                          key={`${line.time}_${i}`}
+                          ref={(el) => (lineRefs.current[i] = el)}
+                          onClick={() => {
+                            handleSeek({ target: { value: line.time } });
+                            setIsUserScrolling(false);
+                          }}
+                          className={`group relative flex cursor-pointer items-center justify-center rounded-2xl px-4 py-3.5 transition-all duration-300 ${
+                            isActive
+                              ? 'scale-[1.03] border border-emerald-500/40 bg-gradient-to-r from-emerald-500/20 via-cyan-500/20 to-emerald-500/10 shadow-xl shadow-emerald-500/15 backdrop-blur-md'
+                              : isPast
+                              ? 'opacity-40 hover:bg-white/5 hover:opacity-90'
+                              : 'opacity-55 hover:bg-white/5 hover:opacity-100'
+                          }`}
+                        >
+                          <div className="flex min-w-0 flex-1 items-center justify-center gap-3">
+                            {isActive && (
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/30 animate-bounce">
+                                <Mic2 className="h-3.5 w-3.5" />
+                              </span>
+                            )}
+
+                            <p
+                              className={`transition-all duration-300 ${
+                                isActive
+                                  ? 'text-xl font-black leading-tight tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 via-cyan-200 to-white drop-shadow-md sm:text-2xl md:text-3xl'
+                                  : 'text-base font-semibold leading-relaxed text-slate-200 sm:text-lg'
+                              }`}
+                            >
+                              {line.text}
+                            </p>
+                          </div>
+
+                          <span className="absolute right-3 hidden items-center gap-1 rounded-full border border-white/10 bg-slate-950/70 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-400 opacity-0 group-hover:opacity-100 sm:flex">
+                            {formatSeconds(line.time)}
+                          </span>
+                        </div>
+                      );
+                    })}
+
+                    {(lyricsData?.provider || lyricsData?.lyrics_copyright) && (
+                      <div className="mt-8 space-y-1 border-t border-white/5 pt-4">
+                        {lyricsData.provider && (
+                          <p className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-cyan-400/90">
+                            <Globe className="h-3.5 w-3.5" />
+                            Provider: {lyricsData.provider}
+                          </p>
+                        )}
+                        {lyricsData.lyrics_copyright && (
+                          <p className="text-[10px] text-slate-500">{lyricsData.lyrics_copyright}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* ──── FULL TEXT SHEET VIEW ──── */
+                  <div className="space-y-2 text-center py-4">
+                    {lyricsText.split('\n').map((line, i) => {
+                      const t = line.trim();
+                      if (!t) return <div key={i} className="h-3" />;
+                      const up = t.toUpperCase();
+                      const isHeader =
+                        up.startsWith('HOOK') || up.startsWith('CHORUS') || up.startsWith('VERSE');
+                      return (
+                        <p
+                          key={i}
+                          className={
+                            isHeader
+                              ? 'pt-3 text-xs font-extrabold tracking-widest text-emerald-400'
+                              : 'text-base font-semibold leading-relaxed text-slate-200 sm:text-lg'
+                          }
+                        >
+                          {t}
                         </p>
-                      )}
-                      {lyricsData.lyrics_copyright && (
-                        <p className="text-[10px] text-slate-500">{lyricsData.lyrics_copyright}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
+                      );
+                    })}
+
+                    {(lyricsData?.provider || lyricsData?.lyrics_copyright) && (
+                      <div className="mt-6 space-y-1 border-t border-white/5 pt-4">
+                        {lyricsData.provider && (
+                          <p className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-cyan-400/90">
+                            <Globe className="h-3.5 w-3.5" />
+                            Source: {lyricsData.provider}
+                          </p>
+                        )}
+                        {lyricsData.lyrics_copyright && (
+                          <p className="text-[10px] text-slate-500">{lyricsData.lyrics_copyright}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
               ) : (
                 <div className="flex flex-col items-center justify-center gap-3 py-14 text-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
@@ -455,6 +737,19 @@ export default function ExpandedPlayer({
                 </div>
               )}
             </div>
+
+            {/* Re-sync Floating Button when user scrolls manually */}
+            {lyricsViewMode === 'synced' && isUserScrolling && activeLineIndex >= 0 && (
+              <div className="absolute bottom-4 right-4 z-30 animate-in fade-in slide-in-from-bottom-2">
+                <button
+                  onClick={handleResyncLyrics}
+                  className="flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500 px-3.5 py-1.5 text-xs font-black text-slate-950 shadow-xl shadow-emerald-500/30 transition hover:bg-emerald-400 active:scale-95"
+                >
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" style={{ animationDuration: '4s' }} />
+                  Re-sync to song
+                </button>
+              </div>
+            )}
           </section>
         )}
 
