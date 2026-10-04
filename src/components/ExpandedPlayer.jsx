@@ -26,10 +26,12 @@ import {
   Check,
   Globe,
   AlignLeft,
-  RefreshCw
+  RefreshCw,
+  Languages
 } from 'lucide-react';
 import AudioVisualizer from './AudioVisualizer';
 import { decodeHTMLEntities, formatPlayCount } from '../utils/formatters';
+import { hasNonLatinScript, transliterateToEnglish } from '../utils/transliterate';
 
 const TABS = [
   { id: 'studio', label: 'Studio', icon: Radio },
@@ -45,8 +47,9 @@ const MODES = [
 
 const RANGE_CSS = `
 .studio-range{-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;outline:none;cursor:pointer;touch-action:none}
-.studio-range::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px rgba(16,185,129,.45);border:0}
-.studio-range::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px rgba(16,185,129,.45);border:0}
+.studio-range::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#ffffff;box-shadow:0 0 12px rgba(16,185,129,0.6), 0 0 0 2px rgba(16,185,129,0.8);border:0;transition:transform 0.15s ease}
+.studio-range::-webkit-slider-thumb:hover{transform:scale(1.25)}
+.studio-range::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#ffffff;box-shadow:0 0 12px rgba(16,185,129,0.6), 0 0 0 2px rgba(16,185,129,0.8);border:0;transition:transform 0.15s ease}
 .studio-range:focus-visible{box-shadow:0 0 0 2px #10b981}
 .no-scrollbar{scrollbar-width:none}.no-scrollbar::-webkit-scrollbar{display:none}
 `;
@@ -98,6 +101,7 @@ export default function ExpandedPlayer({
   const [lyricsError, setLyricsError] = useState(null);
   const [copiedLyrics, setCopiedLyrics] = useState(false);
   const [lyricsViewMode, setLyricsViewMode] = useState('synced'); // 'synced' | 'sheet'
+  const [scriptMode, setScriptMode] = useState('original'); // 'original' | 'english'
   const [isUserScrolling, setIsUserScrolling] = useState(false);
 
   const activeRowRef = useRef(null);
@@ -175,6 +179,12 @@ export default function ExpandedPlayer({
     [lyricsData]
   );
 
+  // Check if current lyrics contain Indic or non-Latin script (Telugu, Hindi, Punjabi, Tamil, etc.)
+  const containsNonLatin = useMemo(() => {
+    if (!lyricsText) return false;
+    return hasNonLatinScript(lyricsText) || (lyricsData?.syncedLyrics && hasNonLatinScript(lyricsData.syncedLyrics));
+  }, [lyricsText, lyricsData]);
+
   // Parse LRC timestamped lyrics OR generate auto-paced synced lines
   const parsedLyrics = useMemo(() => {
     if (!lyricsData) return [];
@@ -242,6 +252,15 @@ export default function ExpandedPlayer({
     return [];
   }, [lyricsData, duration]);
 
+  // Helper to transliterate line text if scriptMode is 'english'
+  const getLineText = (text) => {
+    if (!text) return '';
+    if (scriptMode === 'english' && containsNonLatin) {
+      return transliterateToEnglish(text);
+    }
+    return text;
+  };
+
   // Determine current active lyric line based on playback time
   const activeLineIndex = useMemo(() => {
     if (!parsedLyrics || parsedLyrics.length === 0) return -1;
@@ -293,7 +312,9 @@ export default function ExpandedPlayer({
 
   const handleCopyLyrics = () => {
     if (!lyricsText) return;
-    navigator.clipboard.writeText(lyricsText);
+    const finalCopyText =
+      scriptMode === 'english' && containsNonLatin ? transliterateToEnglish(lyricsText) : lyricsText;
+    navigator.clipboard.writeText(finalCopyText);
     setCopiedLyrics(true);
     setTimeout(() => setCopiedLyrics(false), 2000);
   };
@@ -320,50 +341,52 @@ export default function ExpandedPlayer({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex h-[100dvh] flex-col overflow-hidden bg-[#080b12] text-slate-100 select-none animate-in fade-in duration-300"
+      className="fixed inset-0 z-50 flex h-[100dvh] flex-col overflow-hidden bg-[#06080e] text-slate-100 select-none animate-in fade-in duration-300"
       role="dialog"
       aria-label="Now playing"
     >
       <style>{RANGE_CSS}</style>
 
-      {/* Ambient background */}
+      {/* Atmospheric dynamic artwork glow */}
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
         <img
           src={upgradeImg(currentTrack.image)}
           alt=""
-          className="h-full w-full scale-150 object-cover opacity-25 blur-[80px]"
+          className="h-full w-full scale-150 object-cover opacity-30 blur-[100px] transition-all duration-700"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#080b12]/80 via-[#080b12]/85 to-[#080b12]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#06080e]/75 via-[#06080e]/85 to-[#06080e]" />
       </div>
 
-      {/* ───────── Header ───────── */}
+      {/* ───────── Top Header Bar ───────── */}
       <header
-        className="relative z-20 shrink-0 border-b border-white/5 bg-slate-950/50 px-3 pb-2 backdrop-blur-xl sm:px-6 sm:pb-3"
-        style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}
+        className="relative z-20 shrink-0 border-b border-white/10 bg-slate-950/60 px-3 pb-2.5 backdrop-blur-2xl sm:px-6 sm:pb-3.5"
+        style={{ paddingTop: 'max(0.6rem, env(safe-area-inset-top))' }}
       >
         <div className="flex items-center gap-2 sm:gap-4">
           <button
             onClick={onClose}
             aria-label="Close player"
-            className={`${iconBtn} h-10 w-10 shrink-0 border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10`}
+            className={`${iconBtn} h-10 w-10 shrink-0 border border-white/15 bg-white/10 text-slate-100 hover:bg-white/20 hover:scale-105`}
           >
             <ChevronDown className="h-5 w-5" />
           </button>
 
-          {/* Title block */}
+          {/* Master title info */}
           <div className="min-w-0 flex-1 text-center sm:flex-none sm:text-left">
             <p className="flex items-center justify-center gap-1.5 text-sm font-extrabold tracking-tight text-white sm:justify-start sm:text-base">
               <span className="truncate">Studio Master</span>
-              <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-emerald-300">
+              <span className="shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/20 px-2 py-0.5 font-mono text-[10px] font-extrabold text-emerald-300 shadow-sm shadow-emerald-500/20">
                 {bitrate}k
               </span>
             </p>
-            <p className="hidden truncate text-xs text-slate-400 sm:block">Realtime spectrum engine</p>
+            <p className="hidden truncate text-xs font-medium text-slate-400 sm:block">
+              High Definition Audio Spectrum
+            </p>
           </div>
 
-          {/* Desktop tabs (inline) */}
+          {/* Desktop Navbar Tabs */}
           <nav
-            className="mx-auto hidden items-center gap-1 rounded-full border border-white/10 bg-slate-900/80 p-1 sm:flex"
+            className="mx-auto hidden items-center gap-1.5 rounded-full border border-white/15 bg-slate-900/80 p-1.5 shadow-xl sm:flex"
             aria-label="Player views"
           >
             {TABS.map((t) => {
@@ -374,36 +397,43 @@ export default function ExpandedPlayer({
                   key={t.id}
                   onClick={() => setActiveTab(t.id)}
                   aria-pressed={active}
-                  className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition ${active
-                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25'
-                      : 'text-slate-400 hover:text-white'
-                    }`}
+                  className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-bold transition-all duration-200 ${
+                    active
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 shadow-md shadow-emerald-500/30'
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
                 >
                   <Icon className="h-3.5 w-3.5" />
                   {t.label}
-                  {t.id === 'queue' && <span className="opacity-70">{queue.length}</span>}
+                  {t.id === 'queue' && (
+                    <span className="rounded-full bg-slate-800/80 px-1.5 py-0.5 text-[10px] font-extrabold opacity-80">
+                      {queue.length}
+                    </span>
+                  )}
                 </button>
               );
             })}
           </nav>
 
+          {/* Output Device Picker button */}
           <button
             onClick={onOpenDevicePicker}
             aria-label={`Output device: ${deviceName}`}
-            title="Switch audio output"
-            className={`${iconBtn} h-10 shrink-0 gap-1.5 border px-3 text-xs font-bold ${deviceActive
-                ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
-              }`}
+            title="Switch audio output device"
+            className={`${iconBtn} h-10 shrink-0 gap-2 border px-3 text-xs font-bold transition-all ${
+              deviceActive
+                ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300 shadow-md shadow-emerald-500/20'
+                : 'border-white/15 bg-white/10 text-slate-200 hover:bg-white/20'
+            }`}
           >
             <DeviceIcon className="h-4 w-4" />
-            <span className="hidden max-w-[110px] truncate md:inline">{deviceName}</span>
+            <span className="hidden max-w-[120px] truncate md:inline font-semibold">{deviceName}</span>
           </button>
         </div>
 
-        {/* Mobile tabs (full width, thumb reachable) */}
+        {/* Mobile View Selector Tabs */}
         <nav
-          className="mt-2 grid grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-slate-900/80 p-1 sm:hidden"
+          className="mt-2.5 grid grid-cols-3 gap-1 rounded-2xl border border-white/15 bg-slate-900/90 p-1 shadow-lg sm:hidden"
           aria-label="Player views"
         >
           {TABS.map((t) => {
@@ -414,24 +444,32 @@ export default function ExpandedPlayer({
                 key={t.id}
                 onClick={() => setActiveTab(t.id)}
                 aria-pressed={active}
-                className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${active ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25' : 'text-slate-400'
-                  }`}
+                className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition-all ${
+                  active
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 shadow-md shadow-emerald-500/30'
+                    : 'text-slate-400 active:bg-white/5'
+                }`}
               >
                 <Icon className="h-3.5 w-3.5" />
                 {t.label}
-                {t.id === 'queue' && <span className="opacity-70">{queue.length}</span>}
+                {t.id === 'queue' && (
+                  <span className="rounded-full bg-slate-800/80 px-1.5 py-0.2 text-[10px] font-extrabold opacity-80">
+                    {queue.length}
+                  </span>
+                )}
               </button>
             );
           })}
         </nav>
       </header>
 
-      {/* ───────── Main viewport ───────── */}
-      <main className="no-scrollbar relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-3 sm:px-6 sm:py-5">
+      {/* ───────── Main Player Viewport ───────── */}
+      <main className="no-scrollbar relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3 sm:px-6 sm:py-5">
+        {/* STUDIO TAB: Visualizer, Vinyl Artwork & Metadata */}
         {activeTab === 'studio' && (
-          <section className="mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-evenly gap-3">
-            {/* Visualizer mode switch */}
-            <div className="inline-flex shrink-0 items-center gap-1 rounded-full border border-white/10 bg-slate-900/80 p-1">
+          <section className="mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-evenly gap-3 sm:gap-5">
+            {/* Visualizer Mode Switch Pills */}
+            <div className="inline-flex shrink-0 items-center gap-1 rounded-full border border-white/15 bg-slate-900/80 p-1 shadow-lg backdrop-blur-md">
               {MODES.map((m) => {
                 const Icon = m.icon;
                 const active = visualizerMode === m.id;
@@ -440,10 +478,11 @@ export default function ExpandedPlayer({
                     key={m.id}
                     onClick={() => setVisualizerMode(m.id)}
                     aria-pressed={active}
-                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold transition sm:px-4 sm:text-xs ${active
-                        ? 'bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 shadow-md shadow-cyan-500/20'
+                    className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[11px] font-bold transition-all sm:px-4 sm:text-xs ${
+                      active
+                        ? 'bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 shadow-md shadow-cyan-500/25'
                         : 'text-slate-400 hover:text-white'
-                      }`}
+                    }`}
                   >
                     <Icon className="h-3.5 w-3.5" />
                     {m.label}
@@ -452,76 +491,80 @@ export default function ExpandedPlayer({
               })}
             </div>
 
-            {/* Artwork + visualizer */}
-            <div className="relative flex aspect-square w-[min(84vw,44dvh,380px)] shrink-0 items-center justify-center">
+            {/* Central Artwork & Visualizer Container */}
+            <div className="relative flex aspect-square w-[min(82vw,42dvh,380px)] shrink-0 items-center justify-center">
+              {/* Background Canvas Visualizer */}
               <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center">
                 <AudioVisualizer audioRef={audioRef} isPlaying={isPlaying} mode={visualizerMode} />
               </div>
-              <div className="group relative z-10 aspect-square w-[52%] overflow-hidden rounded-3xl border border-white/20 shadow-2xl shadow-emerald-500/10">
+
+              {/* Album Art Card */}
+              <div className="group relative z-10 aspect-square w-[54%] overflow-hidden rounded-3xl border border-white/25 shadow-2xl shadow-emerald-500/20 backdrop-blur-sm">
                 <img
                   src={upgradeImg(currentTrack.image)}
                   alt=""
-                  className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                  className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
                 />
                 {isPlaying && (
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-950/10">
-                    <Disc3 className="h-8 w-8 animate-spin text-emerald-300/40" style={{ animationDuration: '6s' }} />
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-950/20 backdrop-blur-[1px]">
+                    <Disc3 className="h-9 w-9 animate-spin text-emerald-300/60" style={{ animationDuration: '6s' }} />
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Meta */}
-            <div className="w-full shrink-0 space-y-1.5 text-center">
+            {/* Song Metadata */}
+            <div className="w-full shrink-0 space-y-2 text-center">
               <h2 className="line-clamp-2 text-xl font-black leading-tight tracking-tight text-white sm:text-3xl">
                 {title}
               </h2>
-              <p className="line-clamp-1 text-sm font-semibold text-emerald-400">{artist}</p>
+              <p className="line-clamp-1 text-sm font-bold text-emerald-400 sm:text-base">{artist}</p>
 
+              {/* Badges row */}
               <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1">
                 {language && (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[10px] font-bold text-slate-200">
+                  <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-0.5 text-[10px] font-bold text-slate-200 shadow-sm">
                     {language}
                   </span>
                 )}
                 {year && (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[10px] font-semibold text-slate-400">
+                  <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-0.5 text-[10px] font-semibold text-slate-400">
                     {year}
                   </span>
                 )}
                 {plays && (
-                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-300">
+                  <span className="rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-0.5 font-mono text-[10px] font-bold text-emerald-300">
                     {plays} plays
                   </span>
                 )}
                 {explicit && (
-                  <span className="rounded border border-pink-500/30 bg-pink-500/15 px-1.5 py-0.5 text-[10px] font-black text-pink-400">
-                    E
+                  <span className="rounded border border-pink-500/40 bg-pink-500/20 px-1.5 py-0.5 text-[10px] font-black text-pink-400">
+                    EXPLICIT
                   </span>
                 )}
                 {isResolvingAudio && (
-                  <span className="flex items-center gap-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-cyan-300">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Loading audio
+                  <span className="flex items-center gap-1 rounded-full border border-cyan-500/40 bg-cyan-500/15 px-2.5 py-0.5 text-[10px] font-bold text-cyan-300">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Resolving audio stream
                   </span>
                 )}
               </div>
 
-              {/* Floating Live Synced Lyric Preview in Studio View */}
+              {/* Floating Live Synced Lyric Preview Pill */}
               {parsedLyrics.length > 0 && activeLineIndex >= 0 && parsedLyrics[activeLineIndex] && (
                 <div className="pt-2">
                   <button
                     onClick={() => setActiveTab('lyrics')}
-                    className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-slate-900/80 px-4 py-2 text-xs font-bold text-slate-200 shadow-xl backdrop-blur-md transition active:scale-95 hover:border-emerald-400 hover:bg-slate-900 group"
+                    className="inline-flex max-w-full items-center gap-2.5 rounded-full border border-emerald-500/40 bg-slate-950/80 px-4 py-2 text-xs font-bold text-slate-200 shadow-2xl backdrop-blur-xl transition-all active:scale-95 hover:border-emerald-400 hover:bg-slate-900 group"
                   >
                     <span className="relative flex h-2.5 w-2.5 shrink-0 items-center justify-center">
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                       <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
                     </span>
-                    <span className="max-w-[260px] truncate font-extrabold text-emerald-300 sm:max-w-md">
-                      {parsedLyrics[activeLineIndex].text}
+                    <span className="max-w-[240px] truncate font-extrabold text-emerald-300 sm:max-w-md">
+                      {getLineText(parsedLyrics[activeLineIndex].text)}
                     </span>
                     <span className="shrink-0 text-[10px] text-slate-400 group-hover:text-white">
-                      Full Lyrics →
+                      Lyrics →
                     </span>
                   </button>
                 </div>
@@ -530,25 +573,26 @@ export default function ExpandedPlayer({
           </section>
         )}
 
+        {/* LYRICS TAB: Synced Karaoke / Sheet Mode with English Transliteration Toggle */}
         {activeTab === 'lyrics' && (
-          <section className="relative mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-900/75 shadow-2xl backdrop-blur-md">
+          <section className="relative mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col overflow-hidden rounded-3xl border border-white/15 bg-slate-900/80 shadow-2xl backdrop-blur-xl">
             {/* Header controls & song info */}
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-white/5 p-3 sm:p-4">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2.5 border-b border-white/10 p-3 sm:p-4">
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <img
                   src={upgradeImg(currentTrack.image)}
                   alt=""
-                  className="h-11 w-11 shrink-0 rounded-xl border border-white/10 object-cover shadow-md"
+                  className="h-11 w-11 shrink-0 rounded-xl border border-white/15 object-cover shadow-md"
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <h4 className="truncate text-sm font-bold text-slate-100">{title}</h4>
+                    <h4 className="truncate text-sm font-extrabold text-slate-100">{title}</h4>
                     {parsedLyrics.length > 0 && (
                       <span
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-extrabold shrink-0 ${
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black shrink-0 ${
                           hasLrcExact
-                            ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                            : 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300'
+                            ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300'
+                            : 'border-cyan-500/40 bg-cyan-500/20 text-cyan-300'
                         }`}
                       >
                         <Sparkles className="h-2.5 w-2.5" />
@@ -556,20 +600,36 @@ export default function ExpandedPlayer({
                       </span>
                     )}
                   </div>
-                  <p className="truncate text-xs font-semibold text-emerald-400">{artist}</p>
+                  <p className="truncate text-xs font-bold text-emerald-400">{artist}</p>
                 </div>
               </div>
 
-              {/* View Mode Controls & Copy Button */}
-              <div className="flex items-center gap-1.5 shrink-0">
+              {/* Action Controls: Script Mode Toggle, Karaoke/Sheet View Mode, Copy */}
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                {/* Indic Script Toggle: Original vs English Text */}
+                {containsNonLatin && (
+                  <button
+                    onClick={() => setScriptMode((prev) => (prev === 'original' ? 'english' : 'original'))}
+                    title="Toggle lyrics script between Original and English (Romanized)"
+                    className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-bold transition-all ${
+                      scriptMode === 'english'
+                        ? 'border-cyan-500/40 bg-cyan-500/25 text-cyan-200 shadow-md shadow-cyan-500/20'
+                        : 'border-white/15 bg-white/10 text-slate-300 hover:bg-white/20'
+                    }`}
+                  >
+                    <Languages className="h-3.5 w-3.5 text-cyan-400" />
+                    <span>{scriptMode === 'english' ? 'English Text' : 'Original'}</span>
+                  </button>
+                )}
+
                 {parsedLyrics.length > 0 && (
-                  <div className="flex items-center rounded-xl border border-white/10 bg-slate-950/60 p-1">
+                  <div className="flex items-center rounded-xl border border-white/15 bg-slate-950/70 p-1">
                     <button
                       onClick={() => setLyricsViewMode('synced')}
                       title="Live Synced Karaoke Mode"
-                      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
                         lyricsViewMode === 'synced'
-                          ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                          ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25'
                           : 'text-slate-400 hover:text-white'
                       }`}
                     >
@@ -579,9 +639,9 @@ export default function ExpandedPlayer({
                     <button
                       onClick={() => setLyricsViewMode('sheet')}
                       title="Full Text Sheet Mode"
-                      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
                         lyricsViewMode === 'sheet'
-                          ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                          ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25'
                           : 'text-slate-400 hover:text-white'
                       }`}
                     >
@@ -595,7 +655,7 @@ export default function ExpandedPlayer({
                   <button
                     onClick={handleCopyLyrics}
                     aria-label="Copy lyrics"
-                    className={`${iconBtn} h-9 shrink-0 gap-1.5 border border-white/10 bg-white/5 px-3 text-xs font-bold text-slate-300 hover:bg-white/10`}
+                    className={`${iconBtn} h-8 shrink-0 gap-1.5 border border-white/15 bg-white/10 px-3 text-xs font-bold text-slate-200 hover:bg-white/20`}
                   >
                     {copiedLyrics ? (
                       <>
@@ -613,16 +673,16 @@ export default function ExpandedPlayer({
               </div>
             </div>
 
-            {/* Lyrics display body */}
+            {/* Lyrics Body Content */}
             <div
               ref={lyricsContainerRef}
               onScroll={handleLyricsScroll}
               className="no-scrollbar relative min-h-0 flex-1 select-text overflow-y-auto px-4 py-4 sm:px-6"
             >
               {isLyricsLoading ? (
-                <div className="flex flex-col items-center justify-center gap-3 py-16 text-slate-400">
+                <div className="flex flex-col items-center justify-center gap-3 py-20 text-slate-400">
                   <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
-                  <p className="text-xs font-semibold text-slate-300">Fetching synced lyrics…</p>
+                  <p className="text-xs font-bold text-slate-300">Fetching synced lyrics…</p>
                 </div>
               ) : lyricsData && parsedLyrics.length > 0 ? (
                 lyricsViewMode === 'synced' ? (
@@ -631,6 +691,7 @@ export default function ExpandedPlayer({
                     {parsedLyrics.map((line, i) => {
                       const isActive = i === activeLineIndex;
                       const isPast = i < activeLineIndex;
+                      const lineText = getLineText(line.text);
 
                       return (
                         <div
@@ -642,15 +703,15 @@ export default function ExpandedPlayer({
                           }}
                           className={`group relative flex cursor-pointer items-center justify-center rounded-2xl px-4 py-3.5 transition-all duration-300 ${
                             isActive
-                              ? 'scale-[1.03] border border-emerald-500/40 bg-gradient-to-r from-emerald-500/20 via-cyan-500/20 to-emerald-500/10 shadow-xl shadow-emerald-500/15 backdrop-blur-md'
+                              ? 'scale-[1.03] border border-emerald-500/50 bg-gradient-to-r from-emerald-500/20 via-cyan-500/20 to-emerald-500/15 shadow-xl shadow-emerald-500/20 backdrop-blur-md'
                               : isPast
                               ? 'opacity-40 hover:bg-white/5 hover:opacity-90'
-                              : 'opacity-55 hover:bg-white/5 hover:opacity-100'
+                              : 'opacity-60 hover:bg-white/5 hover:opacity-100'
                           }`}
                         >
                           <div className="flex min-w-0 flex-1 items-center justify-center gap-3">
                             {isActive && (
-                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/30 animate-bounce">
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/40 animate-bounce">
                                 <Mic2 className="h-3.5 w-3.5" />
                               </span>
                             )}
@@ -662,11 +723,11 @@ export default function ExpandedPlayer({
                                   : 'text-base font-semibold leading-relaxed text-slate-200 sm:text-lg'
                               }`}
                             >
-                              {line.text}
+                              {lineText}
                             </p>
                           </div>
 
-                          <span className="absolute right-3 hidden items-center gap-1 rounded-full border border-white/10 bg-slate-950/70 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-400 opacity-0 group-hover:opacity-100 sm:flex">
+                          <span className="absolute right-3 hidden items-center gap-1 rounded-full border border-white/15 bg-slate-950/80 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-400 opacity-0 group-hover:opacity-100 sm:flex">
                             {formatSeconds(line.time)}
                           </span>
                         </div>
@@ -674,9 +735,9 @@ export default function ExpandedPlayer({
                     })}
 
                     {(lyricsData?.provider || lyricsData?.lyrics_copyright) && (
-                      <div className="mt-8 space-y-1 border-t border-white/5 pt-4">
+                      <div className="mt-8 space-y-1 border-t border-white/10 pt-4">
                         {lyricsData.provider && (
-                          <p className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-cyan-400/90">
+                          <p className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-cyan-400">
                             <Globe className="h-3.5 w-3.5" />
                             Provider: {lyricsData.provider}
                           </p>
@@ -691,9 +752,10 @@ export default function ExpandedPlayer({
                   /* ──── FULL TEXT SHEET VIEW ──── */
                   <div className="space-y-2 text-center py-4">
                     {lyricsText.split('\n').map((line, i) => {
-                      const t = line.trim();
-                      if (!t) return <div key={i} className="h-3" />;
-                      const up = t.toUpperCase();
+                      const rawT = line.trim();
+                      if (!rawT) return <div key={i} className="h-3" />;
+                      const t = getLineText(rawT);
+                      const up = rawT.toUpperCase();
                       const isHeader =
                         up.startsWith('HOOK') || up.startsWith('CHORUS') || up.startsWith('VERSE');
                       return (
@@ -701,7 +763,7 @@ export default function ExpandedPlayer({
                           key={i}
                           className={
                             isHeader
-                              ? 'pt-3 text-xs font-extrabold tracking-widest text-emerald-400'
+                              ? 'pt-3 text-xs font-black tracking-widest text-emerald-400'
                               : 'text-base font-semibold leading-relaxed text-slate-200 sm:text-lg'
                           }
                         >
@@ -711,9 +773,9 @@ export default function ExpandedPlayer({
                     })}
 
                     {(lyricsData?.provider || lyricsData?.lyrics_copyright) && (
-                      <div className="mt-6 space-y-1 border-t border-white/5 pt-4">
+                      <div className="mt-6 space-y-1 border-t border-white/10 pt-4">
                         {lyricsData.provider && (
-                          <p className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-cyan-400/90">
+                          <p className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-cyan-400">
                             <Globe className="h-3.5 w-3.5" />
                             Source: {lyricsData.provider}
                           </p>
@@ -726,13 +788,13 @@ export default function ExpandedPlayer({
                   </div>
                 )
               ) : (
-                <div className="flex flex-col items-center justify-center gap-3 py-14 text-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/15 bg-white/10">
                     <Mic2 className="h-6 w-6 text-slate-400" />
                   </div>
-                  <h5 className="text-sm font-bold text-slate-200">No lyrics for this track</h5>
+                  <h5 className="text-sm font-extrabold text-slate-200">No lyrics available</h5>
                   <p className="max-w-xs text-xs leading-relaxed text-slate-400">
-                    {lyricsError || 'Lyrics are not available yet. Switch to Studio to enjoy the visuals.'}
+                    {lyricsError || 'Lyrics for this song could not be loaded. Switch to Studio mode to view visuals.'}
                   </p>
                 </div>
               )}
@@ -753,20 +815,21 @@ export default function ExpandedPlayer({
           </section>
         )}
 
+        {/* QUEUE TAB: Track Queue List */}
         {activeTab === 'queue' && (
-          <section className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-900/70 shadow-2xl backdrop-blur-md">
-            <div className="flex shrink-0 items-center justify-between border-b border-white/5 px-4 py-3">
-              <h4 className="flex items-center gap-2 text-sm font-bold text-slate-200">
+          <section className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col overflow-hidden rounded-3xl border border-white/15 bg-slate-900/80 shadow-2xl backdrop-blur-xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
+              <h4 className="flex items-center gap-2 text-sm font-extrabold text-slate-200">
                 <ListMusic className="h-4 w-4 text-emerald-400" />
-                Up next
+                Up Next Queue
               </h4>
-              <span className="font-mono text-xs text-slate-400">{queue.length} tracks</span>
+              <span className="font-mono text-xs font-bold text-slate-400">{queue.length} tracks</span>
             </div>
 
             <ul className="no-scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2 sm:p-3">
               {queue.length === 0 && (
-                <li className="py-12 text-center text-xs text-slate-400">
-                  Your queue is empty. Play a song or add tracks to see them here.
+                <li className="py-16 text-center text-xs text-slate-400">
+                  Your queue is currently empty. Play songs from the app to add tracks here.
                 </li>
               )}
               {queue.map((track, idx) => {
@@ -775,14 +838,15 @@ export default function ExpandedPlayer({
                   <li key={`${track.id}_${idx}`} ref={current ? activeRowRef : null}>
                     <button
                       onClick={() => onPlayQueueTrack(idx)}
-                      className={`flex w-full items-center gap-3 rounded-2xl border p-2.5 text-left transition active:scale-[0.99] ${current
-                          ? 'border-emerald-500/40 bg-emerald-500/15'
+                      className={`flex w-full items-center gap-3 rounded-2xl border p-2.5 text-left transition-all active:scale-[0.99] ${
+                        current
+                          ? 'border-emerald-500/50 bg-emerald-500/20 shadow-lg shadow-emerald-500/10'
                           : 'border-transparent hover:bg-white/5'
-                        }`}
+                      }`}
                     >
-                      <span className="w-5 shrink-0 text-center text-xs font-bold text-slate-500">
+                      <span className="w-6 shrink-0 text-center text-xs font-extrabold text-slate-400">
                         {current && isPlaying ? (
-                          <Activity className="mx-auto h-4 w-4 text-emerald-400" />
+                          <Activity className="mx-auto h-4 w-4 text-emerald-400 animate-pulse" />
                         ) : (
                           idx + 1
                         )}
@@ -790,13 +854,13 @@ export default function ExpandedPlayer({
                       <img
                         src={upgradeImg(track.image)}
                         alt=""
-                        className="h-11 w-11 shrink-0 rounded-xl border border-white/10 object-cover"
+                        className="h-11 w-11 shrink-0 rounded-xl border border-white/15 object-cover shadow-sm"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className={`truncate text-sm font-bold ${current ? 'text-emerald-400' : 'text-slate-200'}`}>
+                        <p className={`truncate text-sm font-extrabold ${current ? 'text-emerald-400' : 'text-slate-200'}`}>
                           {decodeHTMLEntities(track.title)}
                         </p>
-                        <p className="truncate text-xs text-slate-400">
+                        <p className="truncate text-xs font-medium text-slate-400">
                           {decodeHTMLEntities(track.subtitle || 'Track')}
                         </p>
                       </div>
@@ -809,20 +873,20 @@ export default function ExpandedPlayer({
         )}
       </main>
 
-      {/* ───────── Bottom controls ───────── */}
+      {/* ───────── Bottom Controls & Scrubber Footer ───────── */}
       <footer
-        className="relative z-20 shrink-0 border-t border-white/5 bg-slate-950/90 px-4 pt-3 backdrop-blur-2xl sm:px-8 sm:pt-4"
+        className="relative z-20 shrink-0 border-t border-white/10 bg-slate-950/95 px-3 pt-3 backdrop-blur-2xl sm:px-8 sm:pt-4"
         style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
       >
         <div className="mx-auto max-w-3xl space-y-2 sm:space-y-3">
-          {/* Scrubber */}
-          <div className="flex items-center gap-3">
-            <span className="w-10 shrink-0 text-right font-mono text-[11px] font-bold text-emerald-400">
+          {/* Interactive Scrubber Bar */}
+          <div className="flex items-center gap-3 px-1">
+            <span className="w-10 shrink-0 text-right font-mono text-[11px] font-extrabold text-emerald-400">
               {formatSeconds(currentTime)}
             </span>
             <input
               type="range"
-              aria-label="Seek"
+              aria-label="Seek track"
               min="0"
               max={duration || 100}
               value={currentTime}
@@ -832,21 +896,22 @@ export default function ExpandedPlayer({
               }}
               className="studio-range min-w-0 flex-1"
             />
-            <span className="w-10 shrink-0 font-mono text-[11px] font-bold text-slate-400">
+            <span className="w-10 shrink-0 font-mono text-[11px] font-extrabold text-slate-400">
               {formatSeconds(duration || currentTrack.more_info?.duration)}
             </span>
           </div>
 
-          {/* Controls: stacked on mobile, one row from md up */}
-          <div className="flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between md:gap-6">
-            {/* Transport (centered, primary) — order-1 on mobile, middle on desktop */}
+          {/* Player Action Buttons */}
+          <div className="flex flex-col items-stretch gap-2.5 md:flex-row md:items-center md:justify-between md:gap-6">
+            {/* Main Transport Controls (Centered) */}
             <div className="flex items-center justify-between gap-1 px-1 sm:justify-center sm:gap-4 md:order-2">
               <button
                 onClick={toggleShuffle}
-                aria-label="Shuffle"
+                aria-label="Shuffle mode"
                 aria-pressed={isShuffle}
-                className={`${iconBtn} h-10 w-10 ${isShuffle ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-400 hover:text-white'
-                  }`}
+                className={`${iconBtn} h-10 w-10 ${
+                  isShuffle ? 'bg-emerald-500/20 text-emerald-400 shadow-md shadow-emerald-500/20' : 'text-slate-400 hover:text-white'
+                }`}
               >
                 <Shuffle className="h-5 w-5" />
               </button>
@@ -862,7 +927,7 @@ export default function ExpandedPlayer({
               <button
                 onClick={togglePlayPause}
                 aria-label={isPlaying ? 'Pause' : 'Play'}
-                className={`${iconBtn} h-16 w-16 bg-gradient-to-tr from-emerald-500 to-cyan-400 text-slate-950 shadow-xl shadow-emerald-500/30 hover:scale-105`}
+                className={`${iconBtn} h-14 w-14 sm:h-16 sm:w-16 bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 shadow-xl shadow-emerald-500/35 hover:scale-105`}
               >
                 {isResolvingAudio ? (
                   <Loader2 className="h-7 w-7 animate-spin" />
@@ -883,41 +948,43 @@ export default function ExpandedPlayer({
 
               <button
                 onClick={toggleRepeatMode}
-                aria-label="Repeat"
+                aria-label="Repeat mode"
                 aria-pressed={repeatMode !== 'off'}
-                className={`${iconBtn} h-10 w-10 ${repeatMode !== 'off' ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-400 hover:text-white'
-                  }`}
+                className={`${iconBtn} h-10 w-10 ${
+                  repeatMode !== 'off' ? 'bg-emerald-500/20 text-emerald-400 shadow-md shadow-emerald-500/20' : 'text-slate-400 hover:text-white'
+                }`}
               >
                 {repeatMode === 'one' ? <Repeat1 className="h-5 w-5" /> : <Repeat className="h-5 w-5" />}
               </button>
             </div>
 
-            {/* Secondary actions — left on desktop */}
+            {/* Secondary Actions: Favorite, Playlist, Volume */}
             <div className="flex items-center justify-center gap-2 md:order-1 md:justify-start">
               <button
                 onClick={() => toggleFavorite(currentTrack)}
-                aria-label="Favorite"
+                aria-label="Favorite track"
                 aria-pressed={isFavorite}
-                className={`${iconBtn} h-10 w-10 border ${isFavorite
-                    ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-400'
-                    : 'border-white/10 bg-white/5 text-slate-300 hover:text-white'
-                  }`}
+                className={`${iconBtn} h-10 w-10 border ${
+                  isFavorite
+                    ? 'border-pink-500/50 bg-pink-500/20 text-pink-400 shadow-md shadow-pink-500/20'
+                    : 'border-white/15 bg-white/10 text-slate-300 hover:text-white'
+                }`}
               >
-                <Heart className={`h-[18px] w-[18px] ${isFavorite ? 'fill-current' : ''}`} />
+                <Heart className={`h-[18px] w-[18px] ${isFavorite ? 'fill-current text-pink-400' : ''}`} />
               </button>
 
               {onOpenAddToPlaylist && (
                 <button
                   onClick={() => onOpenAddToPlaylist(currentTrack)}
                   aria-label="Add to playlist"
-                  className={`${iconBtn} h-10 w-10 border border-white/10 bg-white/5 text-slate-300 hover:text-emerald-400`}
+                  className={`${iconBtn} h-10 w-10 border border-white/15 bg-white/10 text-slate-300 hover:text-emerald-400 hover:bg-white/20`}
                 >
                   <ListPlus className="h-[18px] w-[18px]" />
                 </button>
               )}
 
-              {/* Volume: mute toggle always, slider from sm up */}
-              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 py-0.5 pl-0.5 pr-3 md:hidden lg:flex">
+              {/* Volume Controls */}
+              <div className="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 py-0.5 pl-0.5 pr-3 md:hidden lg:flex">
                 <button
                   onClick={handleToggleMute}
                   aria-label={isMuted || volume === 0 ? 'Unmute' : 'Mute'}
@@ -931,7 +998,7 @@ export default function ExpandedPlayer({
                 </button>
                 <input
                   type="range"
-                  aria-label="Volume"
+                  aria-label="Volume level"
                   min="0"
                   max="1"
                   step="0.01"
@@ -945,12 +1012,12 @@ export default function ExpandedPlayer({
               </div>
             </div>
 
-            {/* Desktop-only spacer column to balance layout (md only, where volume pill is hidden) */}
+            {/* Desktop spacer for md layout balance */}
             <div className="hidden items-center justify-end gap-2 md:order-3 md:flex lg:hidden">
               <button
                 onClick={handleToggleMute}
                 aria-label={isMuted || volume === 0 ? 'Unmute' : 'Mute'}
-                className={`${iconBtn} h-10 w-10 border border-white/10 bg-white/5 text-slate-300`}
+                className={`${iconBtn} h-10 w-10 border border-white/15 bg-white/10 text-slate-300`}
               >
                 {isMuted || volume === 0 ? (
                   <VolumeX className="h-[18px] w-[18px] text-pink-400" />
