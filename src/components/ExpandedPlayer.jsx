@@ -179,7 +179,7 @@ export default function ExpandedPlayer({
     [lyricsData]
   );
 
-  // Check if current lyrics contain Indic or non-Latin script (Telugu, Hindi, Punjabi, Tamil, etc.)
+  // Check if current lyrics contain Indic or non-Latin script (Telugu, Hindi, Punjabi, Tamil, Malayalam, Kannada, Bengali, etc.)
   const containsNonLatin = useMemo(() => {
     if (!lyricsText) return false;
     return hasNonLatinScript(lyricsText) || (lyricsData?.syncedLyrics && hasNonLatinScript(lyricsData.syncedLyrics));
