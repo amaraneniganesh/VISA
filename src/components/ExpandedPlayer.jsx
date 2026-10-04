@@ -965,6 +965,3 @@ export default function ExpandedPlayer({
     </div>
   );
 }
-
-
-Make this code ui looks like spotify level especially for mobile responsive and the ui should be even lyrics part dont follow current one I want like the spotify type or similar type and
