@@ -230,7 +230,7 @@ export default function ExpandedPlayer({
       const plainText = decodeHTMLEntities(lyricsData.lyrics.replace(/<br\s*\/?>/gi, '\n'));
       const lines = plainText
         .split('\n')
-        .map((l) => l.trim())
+        .map((l) => l.replace(/<[^>]*>/g, '').trim())
         .filter((l) => l.length > 0);
 
       if (lines.length === 0) return [];
@@ -252,11 +252,14 @@ export default function ExpandedPlayer({
     return [];
   }, [lyricsData, duration]);
 
-  // Helper to transliterate line text if scriptMode is 'english'
+  // Helper to transliterate line text if scriptMode is 'english' without text disappearing
   const getLineText = (text) => {
-    if (!text) return '';
+    if (!text || !text.trim()) return text || '♪ ♪ ♪';
     if (scriptMode === 'english' && containsNonLatin) {
-      return transliterateToEnglish(text);
+      const transliterated = transliterateToEnglish(text);
+      if (transliterated && transliterated.trim()) {
+        return transliterated;
+      }
     }
     return text;
   };
@@ -573,9 +576,9 @@ export default function ExpandedPlayer({
           </section>
         )}
 
-        {/* LYRICS TAB: Synced Karaoke / Sheet Mode with English Transliteration Toggle */}
+        {/* LYRICS TAB: Spotify-Style Highlighted Lyrics Stream */}
         {activeTab === 'lyrics' && (
-          <section className="relative mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col overflow-hidden rounded-3xl border border-white/15 bg-slate-900/80 shadow-2xl backdrop-blur-xl">
+          <section className="relative mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950/70 shadow-2xl backdrop-blur-2xl">
             {/* Header controls & song info */}
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2.5 border-b border-white/10 p-3 sm:p-4">
               <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -604,9 +607,8 @@ export default function ExpandedPlayer({
                 </div>
               </div>
 
-              {/* Action Controls: Script Mode Toggle, Karaoke/Sheet View Mode, Copy */}
+              {/* Action Controls: Script Mode Toggle (Original vs English), View Mode, Copy */}
               <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                {/* Indic Script Toggle: Original vs English Text */}
                 {containsNonLatin && (
                   <button
                     onClick={() => setScriptMode((prev) => (prev === 'original' ? 'english' : 'original'))}
@@ -677,7 +679,7 @@ export default function ExpandedPlayer({
             <div
               ref={lyricsContainerRef}
               onScroll={handleLyricsScroll}
-              className="no-scrollbar relative min-h-0 flex-1 select-text overflow-y-auto px-4 py-4 sm:px-6"
+              className="no-scrollbar relative min-h-0 flex-1 select-text overflow-y-auto px-4 py-2 sm:px-8"
             >
               {isLyricsLoading ? (
                 <div className="flex flex-col items-center justify-center gap-3 py-20 text-slate-400">
@@ -686,8 +688,8 @@ export default function ExpandedPlayer({
                 </div>
               ) : lyricsData && parsedLyrics.length > 0 ? (
                 lyricsViewMode === 'synced' ? (
-                  /* ──── LIVE SYNCED KARAOKE VIEW ──── */
-                  <div className="space-y-4 py-8 text-center sm:py-12">
+                  /* ──── SPOTIFY-STYLE FRAMECOMPACT TEXT HIGHLIGHTING VIEW ──── */
+                  <div className="space-y-6 py-[30vh]">
                     {parsedLyrics.map((line, i) => {
                       const isActive = i === activeLineIndex;
                       const isPast = i < activeLineIndex;
@@ -701,33 +703,34 @@ export default function ExpandedPlayer({
                             handleSeek({ target: { value: line.time } });
                             setIsUserScrolling(false);
                           }}
-                          className={`group relative flex cursor-pointer items-center justify-center rounded-2xl px-4 py-3.5 transition-all duration-300 ${
+                          className={`group relative flex cursor-pointer items-center justify-between py-1 transition-all duration-300 ${
                             isActive
-                              ? 'scale-[1.03] border border-emerald-500/50 bg-gradient-to-r from-emerald-500/20 via-cyan-500/20 to-emerald-500/15 shadow-xl shadow-emerald-500/20 backdrop-blur-md'
+                              ? 'scale-[1.03] origin-left text-white opacity-100'
                               : isPast
-                              ? 'opacity-40 hover:bg-white/5 hover:opacity-90'
-                              : 'opacity-60 hover:bg-white/5 hover:opacity-100'
+                              ? 'text-slate-400/50 hover:text-slate-200 hover:opacity-90'
+                              : 'text-slate-400/60 hover:text-slate-200 hover:opacity-100'
                           }`}
                         >
-                          <div className="flex min-w-0 flex-1 items-center justify-center gap-3">
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
                             {isActive && (
-                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/40 animate-bounce">
-                                <Mic2 className="h-3.5 w-3.5" />
+                              <span className="relative flex h-3 w-3 shrink-0 items-center justify-center">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
                               </span>
                             )}
 
                             <p
-                              className={`transition-all duration-300 ${
+                              className={`transition-all duration-300 select-text ${
                                 isActive
-                                  ? 'text-xl font-black leading-tight tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 via-cyan-200 to-white drop-shadow-md sm:text-2xl md:text-3xl'
-                                  : 'text-base font-semibold leading-relaxed text-slate-200 sm:text-lg'
+                                  ? 'text-2xl font-black leading-tight tracking-tight text-white drop-shadow-[0_0_25px_rgba(255,255,255,0.4)] sm:text-3xl md:text-4xl'
+                                  : 'text-lg font-bold leading-snug sm:text-2xl md:text-3xl'
                               }`}
                             >
                               {lineText}
                             </p>
                           </div>
 
-                          <span className="absolute right-3 hidden items-center gap-1 rounded-full border border-white/15 bg-slate-950/80 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-400 opacity-0 group-hover:opacity-100 sm:flex">
+                          <span className="ml-3 hidden shrink-0 font-mono text-[11px] font-extrabold text-emerald-400/80 opacity-0 group-hover:opacity-100 sm:inline">
                             {formatSeconds(line.time)}
                           </span>
                         </div>
@@ -735,9 +738,9 @@ export default function ExpandedPlayer({
                     })}
 
                     {(lyricsData?.provider || lyricsData?.lyrics_copyright) && (
-                      <div className="mt-8 space-y-1 border-t border-white/10 pt-4">
+                      <div className="mt-12 space-y-1 border-t border-white/10 pt-6">
                         {lyricsData.provider && (
-                          <p className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-cyan-400">
+                          <p className="flex items-center gap-1.5 text-[11px] font-semibold text-cyan-400">
                             <Globe className="h-3.5 w-3.5" />
                             Provider: {lyricsData.provider}
                           </p>
@@ -750,7 +753,7 @@ export default function ExpandedPlayer({
                   </div>
                 ) : (
                   /* ──── FULL TEXT SHEET VIEW ──── */
-                  <div className="space-y-2 text-center py-4">
+                  <div className="space-y-3 py-6">
                     {lyricsText.split('\n').map((line, i) => {
                       const rawT = line.trim();
                       if (!rawT) return <div key={i} className="h-3" />;
@@ -763,8 +766,8 @@ export default function ExpandedPlayer({
                           key={i}
                           className={
                             isHeader
-                              ? 'pt-3 text-xs font-black tracking-widest text-emerald-400'
-                              : 'text-base font-semibold leading-relaxed text-slate-200 sm:text-lg'
+                              ? 'pt-4 text-xs font-black tracking-widest text-emerald-400'
+                              : 'text-base font-semibold leading-relaxed text-slate-200 sm:text-xl'
                           }
                         >
                           {t}
@@ -773,9 +776,9 @@ export default function ExpandedPlayer({
                     })}
 
                     {(lyricsData?.provider || lyricsData?.lyrics_copyright) && (
-                      <div className="mt-6 space-y-1 border-t border-white/10 pt-4">
+                      <div className="mt-8 space-y-1 border-t border-white/10 pt-4">
                         {lyricsData.provider && (
-                          <p className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-cyan-400">
+                          <p className="flex items-center gap-1.5 text-[11px] font-semibold text-cyan-400">
                             <Globe className="h-3.5 w-3.5" />
                             Source: {lyricsData.provider}
                           </p>
