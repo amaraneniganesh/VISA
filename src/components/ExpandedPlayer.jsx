@@ -579,49 +579,73 @@ export default function ExpandedPlayer({
         {/* LYRICS TAB: Spotify-Style Highlighted Lyrics Stream */}
         {activeTab === 'lyrics' && (
           <section className="relative mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950/70 shadow-2xl backdrop-blur-2xl">
-            {/* Header controls & song info */}
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2.5 border-b border-white/10 p-3 sm:p-4">
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <img
-                  src={upgradeImg(currentTrack.image)}
-                  alt=""
-                  className="h-11 w-11 shrink-0 rounded-xl border border-white/15 object-cover shadow-md"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+            {/* Header controls & song info (Structured 2-row layout with zero overlap) */}
+            <div className="flex shrink-0 flex-col gap-2 border-b border-white/10 bg-slate-950/40 p-3 sm:p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <img
+                    src={upgradeImg(currentTrack.image)}
+                    alt=""
+                    className="h-10 w-10 shrink-0 rounded-xl border border-white/15 object-cover shadow-md"
+                  />
+                  <div className="min-w-0 flex-1">
                     <h4 className="truncate text-sm font-extrabold text-slate-100">{title}</h4>
-                    {parsedLyrics.length > 0 && (
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black shrink-0 ${
-                          hasLrcExact
-                            ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300'
-                            : 'border-cyan-500/40 bg-cyan-500/20 text-cyan-300'
-                        }`}
-                      >
-                        <Sparkles className="h-2.5 w-2.5" />
-                        {hasLrcExact ? 'LRC Synced' : 'Auto Synced'}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-xs font-bold text-emerald-400">{artist}</p>
+                      {parsedLyrics.length > 0 && (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black shrink-0 ${
+                            hasLrcExact
+                              ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300'
+                              : 'border-cyan-500/40 bg-cyan-500/20 text-cyan-300'
+                          }`}
+                        >
+                          <Sparkles className="h-2.5 w-2.5" />
+                          {hasLrcExact ? 'LRC Synced' : 'Auto Synced'}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <p className="truncate text-xs font-bold text-emerald-400">{artist}</p>
                 </div>
+
+                {lyricsText && (
+                  <button
+                    onClick={handleCopyLyrics}
+                    aria-label="Copy lyrics"
+                    className={`${iconBtn} h-8 shrink-0 gap-1.5 border border-white/15 bg-white/10 px-2.5 text-xs font-bold text-slate-200 hover:bg-white/20`}
+                  >
+                    {copiedLyrics ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                        <span className="text-emerald-400">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Copy</span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
 
-              {/* Action Controls: Script Mode Toggle (Original vs English), View Mode, Copy */}
-              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                {containsNonLatin && (
+              {/* Action Toolbar Row */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-2">
+                {containsNonLatin ? (
                   <button
                     onClick={() => setScriptMode((prev) => (prev === 'original' ? 'english' : 'original'))}
                     title="Toggle lyrics script between Original and English (Romanized)"
-                    className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-bold transition-all ${
+                    className={`flex items-center gap-1.5 rounded-xl border px-3 py-1 text-xs font-bold transition-all ${
                       scriptMode === 'english'
-                        ? 'border-cyan-500/40 bg-cyan-500/25 text-cyan-200 shadow-md shadow-cyan-500/20'
+                        ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-200 shadow-md shadow-cyan-500/20'
                         : 'border-white/15 bg-white/10 text-slate-300 hover:bg-white/20'
                     }`}
                   >
                     <Languages className="h-3.5 w-3.5 text-cyan-400" />
-                    <span>{scriptMode === 'english' ? 'English Text' : 'Original'}</span>
+                    <span>{scriptMode === 'english' ? 'English Text' : 'Original Script'}</span>
                   </button>
+                ) : (
+                  <div />
                 )}
 
                 {parsedLyrics.length > 0 && (
@@ -636,7 +660,7 @@ export default function ExpandedPlayer({
                       }`}
                     >
                       <Mic2 className="h-3.5 w-3.5" />
-                      <span className="hidden xs:inline sm:inline">Karaoke</span>
+                      <span>Karaoke</span>
                     </button>
                     <button
                       onClick={() => setLyricsViewMode('sheet')}
@@ -648,29 +672,9 @@ export default function ExpandedPlayer({
                       }`}
                     >
                       <AlignLeft className="h-3.5 w-3.5" />
-                      <span className="hidden xs:inline sm:inline">Sheet</span>
+                      <span>Sheet</span>
                     </button>
                   </div>
-                )}
-
-                {lyricsText && (
-                  <button
-                    onClick={handleCopyLyrics}
-                    aria-label="Copy lyrics"
-                    className={`${iconBtn} h-8 shrink-0 gap-1.5 border border-white/15 bg-white/10 px-3 text-xs font-bold text-slate-200 hover:bg-white/20`}
-                  >
-                    {copiedLyrics ? (
-                      <>
-                        <Check className="h-3.5 w-3.5 text-emerald-400" />
-                        <span className="text-emerald-400">Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3.5 w-3.5" />
-                        <span className="hidden xs:inline sm:inline">Copy</span>
-                      </>
-                    )}
-                  </button>
                 )}
               </div>
             </div>
@@ -688,7 +692,7 @@ export default function ExpandedPlayer({
                 </div>
               ) : lyricsData && parsedLyrics.length > 0 ? (
                 lyricsViewMode === 'synced' ? (
-                  /* ──── SPOTIFY-STYLE FRAMECOMPACT TEXT HIGHLIGHTING VIEW ──── */
+                  /* ──── SPOTIFY-STYLE HIGHLIGHTED LYRICS STREAM ──── */
                   <div className="space-y-6 py-[30vh]">
                     {parsedLyrics.map((line, i) => {
                       const isActive = i === activeLineIndex;
@@ -712,13 +716,6 @@ export default function ExpandedPlayer({
                           }`}
                         >
                           <div className="flex min-w-0 flex-1 items-center gap-3">
-                            {isActive && (
-                              <span className="relative flex h-3 w-3 shrink-0 items-center justify-center">
-                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                              </span>
-                            )}
-
                             <p
                               className={`transition-all duration-300 select-text ${
                                 isActive

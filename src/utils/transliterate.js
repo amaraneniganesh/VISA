@@ -41,7 +41,7 @@ const INDIC_MAP = {
   // Kannada
   'ಅ': 'a', 'ಆ': 'aa', 'ಇ': 'i', 'ಈ': 'ee', 'ಉ': 'u', 'ಊ': 'oo', 'ಋ': 'ru', 'ಎ': 'e', 'ಏ': 'ae', 'ಐ': 'ai', 'ಒ': 'o', 'ಓ': 'oo', 'ಔ': 'au',
   'ಕ': 'ka', 'ಖ': 'kha', 'ಗ': 'ga', 'ಘ': 'gha', 'ಙ': 'nga', 'ಚ': 'cha', 'ಛ': 'chha', 'ಜ': 'ja', 'ಝ': 'jha', 'ಞ': 'nya',
-  'ಟ': 'ta', 'ಠ': 'tha', 'ಡ': 'da', 'ಢ': 'dha', 'ಣ': 'na', 'ತ': 'ta', 'ಥ': 'tha', 'ದ': 'da', 'ధ': 'dha', 'ನ': 'na',
+  'ಟ': 'ta', 'ఠ': 'tha', 'ಡ': 'da', 'ಢ': 'dha', 'ಣ': 'na', 'ತ': 'ta', 'థ': 'tha', 'ದ': 'da', 'ధ': 'dha', 'ನ': 'na',
   'ಪ': 'pa', 'ಫ': 'pha', 'ಬ': 'ba', 'ಭ': 'bha', 'ಮ': 'ma', 'ಯ': 'ya', 'ರ': 'ra', 'ಲ': 'la', 'ವ': 'va', 'ಶ': 'sha', 'ಷ': 'sha', 'ಸ': 'sa', 'ಹ': 'ha', 'ಳ': 'la',
   'ಾ': 'aa', 'ಿ': 'i', 'ీ': 'ee', 'ು': 'u', 'ూ': 'oo', 'ೃ': 'ru', 'ೆ': 'e', 'ೇ': 'ae', 'ೈ': 'ai', 'ೊ': 'o', 'ೋ': 'oo', 'ೌ': 'au', 'ಂ': 'm', 'ః': 'h',
 
@@ -50,11 +50,11 @@ const INDIC_MAP = {
   'ക': 'ka', 'ഖ': 'kha', 'ഗ': 'ga', 'ഘ': 'gha', 'ങ': 'nga', 'ച': 'cha', 'ഛ': 'chha', 'ജ': 'ja', 'ഝ': 'jha', 'ഞ': 'nya',
   'ട': 'ta', 'ഠ': 'tha', 'ഡ': 'da', 'ഢ': 'dha', 'ണ': 'na', 'ത': 'ta', 'ഥ': 'tha', 'ദ': 'da', 'ധ': 'dha', 'ന': 'na',
   'പ': 'pa', 'ഫ': 'pha', 'ബ': 'ba', 'ഭ': 'bha', 'മ': 'ma', 'യ': 'ya', 'ര': 'ra', 'ല': 'la', 'വ': 'va', 'ശ': 'sha', 'ഷ': 'sha', 'സ': 'sa', 'ഹ': 'ha', 'ള': 'la', 'ഴ': 'zha', 'റ': 'ra',
-  'ാ': 'aa', 'ി': 'i', 'ീ': 'ee', 'ു': 'u', 'ൂ': 'oo', 'ൃ': 'ru', 'െ': 'e', 'േ': 'ae', 'ൈ': 'ai', 'ൊ': 'o', 'ോ': 'oo', 'ൌ': 'au', 'ം': 'm', 'ഃ': 'h'
+  'ാ': 'aa', 'ி': 'i', 'ീ': 'ee', 'ு': 'u', 'ூ': 'oo', 'ൃ': 'ru', 'െ': 'e', 'േ': 'ae', 'ൈ': 'ai', 'ൊ': 'o', 'ോ': 'oo', 'ൌ': 'au', 'ം': 'm', 'ഃ': 'h'
 };
 
 const HALANTS = ['్', '्', '်', '੍', '്'];
-const MATRAS = 'ాిీుూృెేైొోౌంఃािीुूृेैोौंशாிீுூெேைொோௌಾಿೀುೂೃೆೇೈೊೋೌಂಃാിീുൂൃെേൈൊോൌംഃਾਿੀੁੂੇੈੋੌਂੰ੍ਹ';
+const MATRAS = 'ాిీుూృెేైొోౌంఃािीुूृेैोौंशாிீுூெேைொோௌ<ctrl42>ಿീੁੂೃೆೇೈೊೋೌಂఃാിീുൂൃെേൈൊോൌംഃਾਿੀੁੂੇੈੋੌਂੰ੍ਹ';
 
 export function hasNonLatinScript(text) {
   if (!text) return false;
@@ -85,10 +85,13 @@ export function transliterateToEnglish(str) {
     }
   }
 
+  // Strip residual unmapped combining characters, nuktas, zero-width joiners & dotted circles
+  out = out.replace(/[\u0300-\u036F\u093C\u0A3C\u0900-\u0D7F\u25CC\u200C\u200D]/g, '');
+
   return out
     .split('\n')
     .map((l) => {
-      const trimmed = l.trim();
+      const trimmed = l.replace(/\s+/g, ' ').trim();
       if (!trimmed) return '';
       return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
     })
