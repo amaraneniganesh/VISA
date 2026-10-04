@@ -1,5 +1,5 @@
 // Comprehensive Indic-to-English Script Transliterator
-// Transliterates non-Latin scripts (Telugu, Hindi, Tamil, Kannada, Malayalam, Bengali) into readable English / Romanized text
+// Transliterates non-Latin scripts (Telugu, Hindi, Punjabi, Tamil, Kannada, Malayalam, Bengali) into readable English / Romanized text
 
 const INDIC_MAP = {
   // Telugu Vowels & Consonants
@@ -22,6 +22,17 @@ const INDIC_MAP = {
   'य': 'ya', 'र': 'ra', 'ल': 'la', 'व': 'va', 'श': 'sha', 'ष': 'sha', 'स': 'sa', 'ह': 'ha', 'क्ष': 'ksha', 'ज्ञ': 'gya',
   'ा': 'aa', 'ि': 'i', 'ी': 'ee', 'ु': 'u', 'ू': 'oo', 'ृ': 'ru', 'े': 'e', 'ै': 'ai', 'ो': 'o', 'ौ': 'au', 'ं': 'm', 'ः': 'h',
 
+  // Punjabi (Gurmukhi)
+  'ਅ': 'a', 'ਆ': 'aa', 'ਇ': 'i', 'ਈ': 'ee', 'ਉ': 'u', 'ਊ': 'oo', 'ਏ': 'e', 'ਐ': 'ai', 'ਓ': 'o', 'ਔ': 'au',
+  'ਸ': 'sa', 'ਹ': 'ha', 'ਕ': 'ka', 'ਖ': 'kha', 'ਗ': 'ga', 'ਘ': 'gha', 'ਙ': 'nga',
+  'ਚ': 'cha', 'ਛ': 'chha', 'ਜ': 'ja', 'ਝ': 'jha', 'ਞ': 'nya',
+  'ਟ': 'ta', 'ਠ': 'tha', 'ਡ': 'da', 'ਢ': 'dha', 'ਣ': 'na',
+  'ਤ': 'ta', 'ਥ': 'tha', 'ਦ': 'da', 'ਧ': 'dha', 'ਨ': 'na',
+  'ਪ': 'pa', 'ਫ': 'pha', 'ਬ': 'ba', 'ਭ': 'bha', 'ਮ': 'ma',
+  'ਯ': 'ya', 'ਰ': 'ra', 'ਲ': 'la', 'ਵ': 'va', 'ੜ': 'ra',
+  'ਸ਼': 'sha', 'ਖ਼': 'kha', 'ਗ਼': 'ga', 'ਜ਼': 'za', 'ਫ਼': 'fa', 'ਲ਼': 'la',
+  'ਾ': 'aa', 'ਿ': 'i', 'ੀ': 'ee', 'ੁ': 'u', 'ੂ': 'oo', 'ੇ': 'e', 'ੈ': 'ai', 'ੋ': 'o', 'ੌ': 'au', 'ਂ': 'm', 'ੰ': 'm', '੍ਹ': 'h',
+
   // Tamil
   'அ': 'a', 'ஆ': 'aa', 'இ': 'i', 'ஈ': 'ee', 'உ': 'u', 'ஊ': 'oo', 'எ': 'e', 'ஏ': 'ae', 'ஐ': 'ai', 'ஒ': 'o', 'ஓ': 'oo', 'ஔ': 'au',
   'க': 'ka', 'ங': 'nga', 'ச': 'cha', 'ஞ': 'nya', 'ட': 'ta', 'ண': 'na', 'த': 'ta', 'ந': 'na', 'ப': 'pa', 'ம': 'ma', 'ய': 'ya', 'ர': 'ra', 'ல': 'la', 'வ': 'va', 'ழ': 'zha', 'ள': 'la', 'ற': 'ra', 'ன': 'na',
@@ -32,7 +43,7 @@ const INDIC_MAP = {
   'ಕ': 'ka', 'ಖ': 'kha', 'ಗ': 'ga', 'ಘ': 'gha', 'ಙ': 'nga', 'ಚ': 'cha', 'ಛ': 'chha', 'ಜ': 'ja', 'ಝ': 'jha', 'ಞ': 'nya',
   'ಟ': 'ta', 'ಠ': 'tha', 'ಡ': 'da', 'ಢ': 'dha', 'ಣ': 'na', 'ತ': 'ta', 'ಥ': 'tha', 'ದ': 'da', 'ధ': 'dha', 'ನ': 'na',
   'ಪ': 'pa', 'ಫ': 'pha', 'ಬ': 'ba', 'ಭ': 'bha', 'ಮ': 'ma', 'ಯ': 'ya', 'ರ': 'ra', 'ಲ': 'la', 'ವ': 'va', 'ಶ': 'sha', 'ಷ': 'sha', 'ಸ': 'sa', 'ಹ': 'ha', 'ಳ': 'la',
-  'ಾ': 'aa', 'ಿ': 'i', 'ೀ': 'ee', 'ು': 'u', 'ೂ': 'oo', 'ೃ': 'ru', 'ೆ': 'e', 'ೇ': 'ae', 'ೈ': 'ai', 'ೊ': 'o', 'ೋ': 'oo', 'ೌ': 'au', 'ಂ': 'm', 'ಃ': 'h',
+  'ಾ': 'aa', 'ಿ': 'i', 'ీ': 'ee', 'ು': 'u', 'ూ': 'oo', 'ೃ': 'ru', 'ೆ': 'e', 'ೇ': 'ae', 'ೈ': 'ai', 'ೊ': 'o', 'ೋ': 'oo', 'ೌ': 'au', 'ಂ': 'm', 'ః': 'h',
 
   // Malayalam
   'അ': 'a', 'ആ': 'aa', 'ഇ': 'i', 'ഈ': 'ee', 'ഉ': 'u', 'ഊ': 'oo', 'ഋ': 'ru', 'എ': 'e', 'ഏ': 'ae', 'ഐ': 'ai', 'ഒ': 'o', 'ഓ': 'oo', 'ഔ': 'au',
@@ -42,12 +53,12 @@ const INDIC_MAP = {
   'ാ': 'aa', 'ി': 'i', 'ീ': 'ee', 'ു': 'u', 'ൂ': 'oo', 'ൃ': 'ru', 'െ': 'e', 'േ': 'ae', 'ൈ': 'ai', 'ൊ': 'o', 'ോ': 'oo', 'ൌ': 'au', 'ം': 'm', 'ഃ': 'h'
 };
 
-const HALANTS = ['్', '्', '்', '್', '്'];
-const MATRAS = 'ాిీుూృెేైొోౌంఃािीुूृेैोौंशாிீுூெேைொோௌಾಿೀುೂೃೆೇೈೊೋೌಂಃാിീുൂൃെേൈൊോൌംഃ';
+const HALANTS = ['్', '्', '်', '੍', '്'];
+const MATRAS = 'ాిీుూృెేైొోౌంఃािीुूृेैोौंशாிீுூெேைொோௌಾಿೀುೂೃೆೇೈೊೋೌಂಃാിീുൂൃെേൈൊോൌംഃਾਿੀੁੂੇੈੋੌਂੰ੍ਹ';
 
 export function hasNonLatinScript(text) {
   if (!text) return false;
-  return /[\u0900-\u0D7F]/.test(text);
+  return /[\u0900-\u0D7F\u0A00-\u0A7F]/.test(text);
 }
 
 export function transliterateToEnglish(str) {
