@@ -29,10 +29,14 @@ import AudioVisualizer from './AudioVisualizer';
 import { decodeHTMLEntities, formatPlayCount } from '../utils/formatters';
 import { hasNonLatinScript, transliterateToEnglish } from '../utils/transliterate';
 
-/* ───────────────────────── helpers ───────────────────────── */
+/* ───────────────────────── constants & helpers ───────────────────────── */
 
 const FALLBACK_RGB = [40, 56, 52];
 const VIS_MODES = ['radial', 'spectrum', 'particles'];
+const GREEN = '#1ed760';
+
+// Split "desktop" layout: tablets/desktops (>=900px) and any landscape screen >=640px (phones on their side)
+const WIDE_QUERY = '(min-width: 900px), (min-width: 640px) and (orientation: landscape)';
 
 const CSS = `
 .sp-range{-webkit-appearance:none;appearance:none;width:100%;height:16px;background:transparent;cursor:pointer;touch-action:none;outline:none}
@@ -42,10 +46,11 @@ const CSS = `
 .sp-range::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:#fff;border:0}
 .sp-range:active::-webkit-slider-thumb{transform:scale(1.35)}
 .sp-range:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px rgba(255,255,255,.5)}
+@media (hover:hover){.sp-range::-webkit-slider-thumb{opacity:0}.sp-range:hover::-webkit-slider-thumb,.sp-range:focus-visible::-webkit-slider-thumb{opacity:1}}
 .sp-noscroll{scrollbar-width:none;-ms-overflow-style:none}
 .sp-noscroll::-webkit-scrollbar{display:none}
 @keyframes sp-bars{0%,100%{transform:scaleY(.3)}50%{transform:scaleY(1)}}
-.sp-bar{transform-origin:bottom;animation:sp-bars 0.9s ease-in-out infinite}
+.sp-bar{transform-origin:bottom;animation:sp-bars .9s ease-in-out infinite}
 @keyframes sp-fade{from{opacity:0}to{opacity:1}}
 .sp-fade{animation:sp-fade .6s ease both}
 @keyframes sp-up{from{transform:translateY(100%)}to{transform:translateY(0)}}
@@ -53,7 +58,23 @@ const CSS = `
 @media (prefers-reduced-motion:reduce){.sp-bar,.sp-fade,.sp-up{animation:none}}
 `;
 
-// Pull a dominant, darkened colour out of the artwork (falls back silently on CORS errors)
+const iconBtn =
+  'inline-flex items-center justify-center rounded-full transition active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70';
+const ghost = `${iconBtn} hover:bg-white/10`;
+
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = (e) => setMatches(e.matches);
+    setMatches(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
+}
+
+// Dominant, darkened colour from the artwork (falls back silently on CORS errors)
 function useArtColor(src) {
   const [rgb, setRgb] = useState(FALLBACK_RGB);
   useEffect(() => {
@@ -72,7 +93,7 @@ function useArtColor(src) {
         for (let i = 0; i < d.length; i += 4) {
           const mx = Math.max(d[i], d[i + 1], d[i + 2]);
           const mn = Math.min(d[i], d[i + 1], d[i + 2]);
-          const weight = 0.2 + (mx - mn) / 255; // favour saturated pixels
+          const weight = 0.2 + (mx - mn) / 255;
           r += d[i] * weight; g += d[i + 1] * weight; b += d[i + 2] * weight; w += weight;
         }
         r /= w; g /= w; b /= w;
@@ -89,9 +110,6 @@ function useArtColor(src) {
   }, [src]);
   return rgb;
 }
-
-const iconBtn =
-  'inline-flex items-center justify-center rounded-full transition active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70';
 
 /* ───────────────────────── component ───────────────────────── */
 
@@ -132,26 +150,98 @@ export default function ExpandedPlayer({
   activeDevice,
   initialTab = 'studio'
 }) {
-  // 'player' | 'lyrics' | 'queue'  (legacy 'studio' maps to 'player')
-  const [view, setView] = useState(initialTab === 'studio' || !initialTab ? 'player' : initialTab);
-  const [visMode, setVisMode] = useState(-1); // -1 = artwork, otherwise index in VIS_MODES
+  const isWide = useMediaQuery(WIDE_QUERY);
 
+  // 'player' | 'lyrics' | 'queue'. On wide screens lyrics/queue are tabs of a side panel.
+  const [view, setView] = useState(initialTab === 'studio' || !initialTab ? 'player' : initialTab);
+  const [visMode, setVisMode] = useState(-1); // -1 = artwork
   const [lyricsData, setLyricsData] = useState(null);
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [lyricsError, setLyricsError] = useState(null);
   const [copied, setCopied] = useState(false);
   const [userScrolling, setUserScrolling] = useState(false);
-  const [scriptMode, setScriptMode] = useState('original'); // 'original' | 'english'
+  const [scriptMode, setScriptMode] = useState(() => {
+    try { return localStorage.getItem('player.scriptMode') === 'english' ? 'english' : 'original'; }
+    catch { return 'original'; }
+  });
 
   const lyricsScrollRef = useRef(null);
   const lineRefs = useRef([]);
   const queueActiveRef = useRef(null);
   const scrollTimer = useRef(null);
+  const mainRef = useRef(null);
+  const touchY = useRef(null);
+
+  const panel = view === 'queue' ? 'queue' : 'lyrics';
+  const lyricsVisible = isWide ? panel === 'lyrics' : view === 'lyrics';
+  const queueVisible = isWide ? panel === 'queue' : view === 'queue';
 
   const art = currentTrack ? upgradeImg(currentTrack.image) : '';
   const rgb = useArtColor(art);
   const rgbStr = rgb.join(',');
   const deep = rgb.map((v) => Math.round(v * 0.35)).join(',');
+
+  const chooseScript = (m) => {
+    setScriptMode(m);
+    try { localStorage.setItem('player.scriptMode', m); } catch { /* ignore */ }
+  };
+
+  /* ── always-fresh handles for global listeners ── */
+  const live = useRef({});
+  live.current = { togglePlayPause, handleSeek, currentTime, duration, handleToggleMute, handlePrevTrack, handleNextTrack, onClose, isPlaying };
+
+  /* ── keyboard shortcuts (desktop) ── */
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      if (t?.closest?.('input,textarea,select,[contenteditable="true"]')) return;
+      const L = live.current;
+      const seek = (v) => L.handleSeek({ target: { value: Math.max(0, Math.min(L.duration || 0, v)) } });
+      switch (e.code) {
+        case 'Space':
+          if (t?.closest?.('button')) return; // let the focused button handle it
+          e.preventDefault(); L.togglePlayPause(); break;
+        case 'ArrowRight': seek(L.currentTime + 5); break;
+        case 'ArrowLeft': seek(L.currentTime - 5); break;
+        case 'KeyN': L.handleNextTrack?.(); break;
+        case 'KeyP': L.handlePrevTrack?.(); break;
+        case 'KeyM': L.handleToggleMute?.(); break;
+        case 'Escape': L.onClose?.(); break;
+        default: return;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  /* ── Media Session: lock-screen / headset / notification controls ── */
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !currentTrack) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: decodeHTMLEntities(currentTrack.title || ''),
+        artist: decodeHTMLEntities(currentTrack.subtitle || currentTrack.more_info?.music || ''),
+        artwork: art ? [{ src: art, sizes: '512x512' }] : []
+      });
+    } catch { /* unsupported */ }
+  }, [currentTrack?.id, art]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
+    const set = (a, fn) => { try { ms.setActionHandler(a, fn); } catch { /* unsupported */ } };
+    set('play', () => !live.current.isPlaying && live.current.togglePlayPause());
+    set('pause', () => live.current.isPlaying && live.current.togglePlayPause());
+    set('previoustrack', () => live.current.handlePrevTrack?.());
+    set('nexttrack', () => live.current.handleNextTrack?.());
+    set('seekto', (d) => live.current.handleSeek({ target: { value: d.seekTime } }));
+    return () => ['play', 'pause', 'previoustrack', 'nexttrack', 'seekto'].forEach((a) => set(a, null));
+  }, []);
+
+  useEffect(() => {
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+  }, [isPlaying]);
 
   /* ── lyrics fetch ── */
   useEffect(() => {
@@ -192,10 +282,9 @@ export default function ExpandedPlayer({
     () => (lyricsData?.lyrics ? decodeHTMLEntities(lyricsData.lyrics.replace(/<br\s*\/?>/gi, '\n')) : ''),
     [lyricsData]
   );
-
   const isIndicSong = useMemo(() => hasNonLatinScript(lyricsText || ''), [lyricsText]);
 
-  /* ── parse LRC or estimate timing ── */
+  /* ── parse LRC, or estimate timing for plain text ── */
   const parsedLyrics = useMemo(() => {
     if (!lyricsData) return [];
     const raw =
@@ -229,25 +318,16 @@ export default function ExpandedPlayer({
     return [];
   }, [lyricsData, lyricsText, duration]);
 
-  /* ── Transliterate / Format Display Lyrics (Original vs English Text) ── */
-  const displayLyrics = useMemo(() => {
-    if (!parsedLyrics.length) return [];
-    if (scriptMode === 'english') {
-      return parsedLyrics.map((item) => ({
-        ...item,
-        text: transliterateToEnglish(item.text)
-      }));
-    }
-    return parsedLyrics;
-  }, [parsedLyrics, scriptMode]);
+  const showEnglish = scriptMode === 'english' && isIndicSong;
 
-  const displaySheetText = useMemo(() => {
-    if (!lyricsText) return '';
-    if (scriptMode === 'english') {
-      return transliterateToEnglish(lyricsText);
-    }
-    return lyricsText;
-  }, [lyricsText, scriptMode]);
+  const displayLyrics = useMemo(
+    () => (showEnglish ? parsedLyrics.map((l) => ({ ...l, text: transliterateToEnglish(l.text) })) : parsedLyrics),
+    [parsedLyrics, showEnglish]
+  );
+  const displaySheetText = useMemo(
+    () => (showEnglish ? transliterateToEnglish(lyricsText) : lyricsText),
+    [lyricsText, showEnglish]
+  );
 
   const isSynced = parsedLyrics.length > 0;
   const activeLine = useMemo(() => {
@@ -259,26 +339,22 @@ export default function ExpandedPlayer({
     return a;
   }, [parsedLyrics, currentTime]);
 
-  /* ── scrolling helpers ── */
+  /* ── scrolling ── */
   const centerLine = useCallback((idx, smooth = true) => {
     const box = lyricsScrollRef.current;
     const el = lineRefs.current[idx];
     if (!box || !el) return;
-    box.scrollTo({
-      top: Math.max(0, el.offsetTop - box.clientHeight * 0.3),
-      behavior: smooth ? 'smooth' : 'auto'
-    });
+    box.scrollTo({ top: Math.max(0, el.offsetTop - box.clientHeight * 0.3), behavior: smooth ? 'smooth' : 'auto' });
   }, []);
 
   useEffect(() => {
-    if (view === 'lyrics' && !userScrolling && activeLine >= 0) centerLine(activeLine);
-  }, [activeLine, view, userScrolling, centerLine]);
+    if (lyricsVisible && !userScrolling && activeLine >= 0) centerLine(activeLine);
+  }, [activeLine, lyricsVisible, userScrolling, centerLine, showEnglish]);
 
   useEffect(() => {
-    if (view === 'queue' && queueActiveRef.current) queueActiveRef.current.scrollIntoView({ block: 'center' });
-  }, [view]);
+    if (queueVisible && queueActiveRef.current) queueActiveRef.current.scrollIntoView({ block: 'center' });
+  }, [queueVisible]);
 
-  // Only react to real user gestures, not programmatic scrolls
   const pauseAutoScroll = () => {
     setUserScrolling(true);
     clearTimeout(scrollTimer.current);
@@ -287,17 +363,31 @@ export default function ExpandedPlayer({
   useEffect(() => () => clearTimeout(scrollTimer.current), []);
 
   const copyLyrics = () => {
-    if (!lyricsText) return;
-    navigator.clipboard?.writeText(lyricsText);
+    const text = isSynced
+      ? displayLyrics.map((l) => l.text).filter((t) => t !== '\u266A').join('\n')
+      : displaySheetText;
+    if (!text) return;
+    navigator.clipboard?.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   };
 
   const seekTo = (t) => handleSeek({ target: { value: t } });
 
+  // Swipe down on the mobile player to close
+  const onTouchStart = (e) => {
+    touchY.current = e.target.closest?.('input[type=range]') ? null : e.touches[0].clientY;
+  };
+  const onTouchEnd = (e) => {
+    if (touchY.current == null) return;
+    const dy = e.changedTouches[0].clientY - touchY.current;
+    touchY.current = null;
+    if (dy > 120 && (mainRef.current?.scrollTop || 0) <= 0) onClose?.();
+  };
+
   if (!currentTrack) return null;
 
-  /* ── derived display values ── */
+  /* ── derived values ── */
   const title = decodeHTMLEntities(currentTrack.title);
   const artist = decodeHTMLEntities(
     currentTrack.subtitle || currentTrack.more_info?.music || currentTrack.header_desc || 'Unknown artist'
@@ -314,7 +404,6 @@ export default function ExpandedPlayer({
     activeDevice?.type === 'headphones' ? Headphones : activeDevice?.type === 'speaker' ? Speaker : Laptop;
   const deviceName = activeDevice?.name || 'This device';
   const deviceActive = activeDevice?.id && activeDevice.id !== 'default';
-
   const nextTrack = queue[queueIndex + 1];
 
   /* ───────── shared pieces ───────── */
@@ -330,9 +419,7 @@ export default function ExpandedPlayer({
         value={currentTime}
         onChange={handleSeek}
         className="sp-range"
-        style={{
-          '--track': `linear-gradient(to right,#fff ${progress}%,rgba(255,255,255,.3) ${progress}%)`
-        }}
+        style={{ '--track': `linear-gradient(to right,#fff ${progress}%,rgba(255,255,255,.3) ${progress}%)` }}
       />
       <div className="-mt-0.5 flex justify-between text-[11px] font-medium tabular-nums text-white/65">
         <span>{formatSeconds(currentTime)}</span>
@@ -363,28 +450,136 @@ export default function ExpandedPlayer({
         onClick={toggleShuffle}
         aria-label="Shuffle"
         aria-pressed={isShuffle}
-        className={`${iconBtn} relative h-11 w-11 ${isShuffle ? 'text-[#1ed760]' : 'text-white/85'}`}
+        className={`${ghost} relative h-11 w-11 ${isShuffle ? 'text-[#1ed760]' : 'text-white/85'}`}
       >
         <Shuffle className="h-[22px] w-[22px]" />
         {isShuffle && <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-[#1ed760]" />}
       </button>
-      <button onClick={handlePrevTrack} aria-label="Previous" className={`${iconBtn} h-12 w-12 text-white`}>
+      <button onClick={handlePrevTrack} aria-label="Previous" className={`${ghost} h-12 w-12 text-white`}>
         <SkipBack className="h-8 w-8 fill-current" />
       </button>
       {playButton()}
-      <button onClick={handleNextTrack} aria-label="Next" className={`${iconBtn} h-12 w-12 text-white`}>
+      <button onClick={handleNextTrack} aria-label="Next" className={`${ghost} h-12 w-12 text-white`}>
         <SkipForward className="h-8 w-8 fill-current" />
       </button>
       <button
         onClick={toggleRepeatMode}
         aria-label="Repeat"
         aria-pressed={repeatMode !== 'off'}
-        className={`${iconBtn} relative h-11 w-11 ${repeatMode !== 'off' ? 'text-[#1ed760]' : 'text-white/85'}`}
+        className={`${ghost} relative h-11 w-11 ${repeatMode !== 'off' ? 'text-[#1ed760]' : 'text-white/85'}`}
       >
         {repeatMode === 'one' ? <Repeat1 className="h-[22px] w-[22px]" /> : <Repeat className="h-[22px] w-[22px]" />}
         {repeatMode !== 'off' && <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-[#1ed760]" />}
       </button>
     </div>
+  );
+
+  const titleRow = (
+    <div className="flex items-center gap-2">
+      <div className="min-w-0 flex-1">
+        <h2 className="line-clamp-2 text-[22px] font-extrabold leading-tight tracking-tight xl:text-2xl">{title}</h2>
+        <p className="mt-0.5 flex items-center gap-1.5 text-[15px] font-medium text-white/70">
+          {explicit && (
+            <span className="shrink-0 rounded-[3px] bg-white/60 px-1 text-[10px] font-bold leading-4 text-black">E</span>
+          )}
+          <span className="truncate">{artist}</span>
+        </p>
+      </div>
+      {onOpenAddToPlaylist && (
+        <button onClick={() => onOpenAddToPlaylist(currentTrack)} aria-label="Add to playlist" className={`${ghost} h-11 w-11 text-white/85`}>
+          <ListPlus className="h-6 w-6" />
+        </button>
+      )}
+      <button
+        onClick={() => toggleFavorite(currentTrack)}
+        aria-label={isFavorite ? 'Remove from favourites' : 'Add to favourites'}
+        aria-pressed={isFavorite}
+        className={`${ghost} h-11 w-11 ${isFavorite ? 'text-[#1ed760]' : 'text-white/85'}`}
+      >
+        <Heart className={`h-6 w-6 ${isFavorite ? 'fill-current' : ''}`} />
+      </button>
+    </div>
+  );
+
+  const artwork = (maxH) => (
+    <button
+      onClick={() => setVisMode((m) => (m + 1 >= VIS_MODES.length ? -1 : m + 1))}
+      aria-label="Cycle visualizer"
+      className={`relative mx-auto block aspect-square w-full overflow-hidden rounded-lg bg-black/30 shadow-[0_20px_50px_rgba(0,0,0,.55)] transition-transform duration-500 ease-out ${
+        isPlaying ? 'scale-100' : 'scale-[0.86]'
+      }`}
+      style={{ maxWidth: `min(100%, ${maxH})` }}
+    >
+      <img src={art} alt={`${title} cover`} className="h-full w-full object-cover" />
+      {visMode >= 0 && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm">
+          <AudioVisualizer audioRef={audioRef} isPlaying={isPlaying} mode={VIS_MODES[visMode]} />
+        </div>
+      )}
+    </button>
+  );
+
+  const deviceButton = (
+    <button
+      onClick={onOpenDevicePicker}
+      aria-label={`Output device: ${deviceName}`}
+      className={`${ghost} h-10 gap-2 px-2 text-xs font-bold ${deviceActive ? 'text-[#1ed760]' : 'text-white/75'}`}
+    >
+      <DeviceIcon className="h-[18px] w-[18px]" />
+      <span className="max-w-[140px] truncate">{deviceName}</span>
+    </button>
+  );
+
+  const visButton = (
+    <button
+      onClick={() => setVisMode((m) => (m >= 0 ? -1 : 0))}
+      aria-label="Visualizer"
+      aria-pressed={visMode >= 0}
+      className={`${ghost} h-10 w-10 ${visMode >= 0 ? 'text-[#1ed760]' : 'text-white/75'}`}
+    >
+      <Activity className="h-5 w-5" />
+    </button>
+  );
+
+  const volumeRow = (
+    <div className="flex items-center gap-2">
+      <button onClick={handleToggleMute} aria-label={isMuted || volume === 0 ? 'Unmute' : 'Mute'} className={`${ghost} h-9 w-9 shrink-0 text-white/80`}>
+        {isMuted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+      </button>
+      <input
+        type="range"
+        aria-label="Volume"
+        min="0"
+        max="1"
+        step="0.01"
+        value={isMuted ? 0 : volume}
+        onChange={handleVolumeChange}
+        className="sp-range"
+        style={{ '--track': `linear-gradient(to right,#fff ${volPct}%,rgba(255,255,255,.3) ${volPct}%)` }}
+      />
+    </div>
+  );
+
+  const scriptToggle = isIndicSong && (
+    <div role="group" aria-label="Lyrics script" className="flex items-center rounded-full bg-black/30 p-0.5 text-[11px] font-bold">
+      <Languages className="mx-1.5 h-3.5 w-3.5 text-white/60" aria-hidden="true" />
+      {[['original', 'Original'], ['english', 'English']].map(([id, label]) => (
+        <button
+          key={id}
+          onClick={() => chooseScript(id)}
+          aria-pressed={scriptMode === id}
+          className={`rounded-full px-3 py-1 transition ${scriptMode === id ? 'bg-white text-black' : 'text-white/70 hover:text-white'}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const copyBtn = (lyricsText || isSynced) && (
+    <button onClick={copyLyrics} aria-label="Copy lyrics" className={`${ghost} h-10 w-10`}>
+      {copied ? <Check className="h-5 w-5 text-[#1ed760]" /> : <Copy className="h-5 w-5" />}
+    </button>
   );
 
   const equaliser = (
@@ -395,157 +590,293 @@ export default function ExpandedPlayer({
     </span>
   );
 
-  /* ───────── layout ───────── */
+  /* ── Lyrics body (shared by mobile overlay and desktop panel) ── */
+  const lyricsBody = (
+    <div className="relative min-h-0 flex-1">
+      <div
+        ref={lyricsScrollRef}
+        onTouchMove={pauseAutoScroll}
+        onWheel={pauseAutoScroll}
+        onPointerDown={pauseAutoScroll}
+        className={`sp-noscroll h-full select-text overflow-y-auto ${isWide ? 'px-8' : 'px-6'}`}
+        style={{
+          WebkitMaskImage: 'linear-gradient(to bottom,transparent 0,#000 7%,#000 88%,transparent 100%)',
+          maskImage: 'linear-gradient(to bottom,transparent 0,#000 7%,#000 88%,transparent 100%)'
+        }}
+      >
+        {lyricsLoading ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-white/70">
+            <Loader2 className="h-7 w-7 animate-spin" />
+            <p className="text-sm font-semibold">Loading lyrics</p>
+          </div>
+        ) : isSynced ? (
+          <ul className="pt-[18dvh] pb-[45dvh]">
+            {displayLyrics.map((line, i) => {
+              const active = i === activeLine;
+              const past = i < activeLine;
+              return (
+                <li key={`${line.time}-${i}`} ref={(el) => (lineRefs.current[i] = el)}>
+                  <button
+                    onClick={() => { seekTo(line.time); setUserScrolling(false); }}
+                    aria-current={active ? 'true' : undefined}
+                    className={`block w-full origin-left py-2.5 text-left font-extrabold leading-[1.18] tracking-tight transition-all duration-300 ${
+                      isWide ? 'text-[32px] xl:text-[40px]' : 'text-[28px] sm:text-[32px]'
+                    } ${
+                      active
+                        ? 'scale-100 text-white'
+                        : past
+                        ? 'scale-[0.97] text-white/55 hover:text-white/80'
+                        : 'scale-[0.97] text-white/30 hover:text-white/60'
+                    }`}
+                  >
+                    {line.text}
+                  </button>
+                </li>
+              );
+            })}
+            <li className="mt-10 space-y-1 text-xs font-medium text-white/50">
+              {parsedLyrics[0]?.estimated && <p>Line timing is approximate for this song.</p>}
+              {lyricsData?.provider && <p>Lyrics provided by {lyricsData.provider}</p>}
+              {lyricsData?.lyrics_copyright && <p>{lyricsData.lyrics_copyright}</p>}
+            </li>
+          </ul>
+        ) : displaySheetText ? (
+          <div className="space-y-1 pt-[10dvh] pb-[30dvh]">
+            {displaySheetText.split('\n').map((l, i) =>
+              l.trim() ? (
+                <p key={i} className="text-[26px] font-extrabold leading-[1.2] tracking-tight text-white">{l.trim()}</p>
+              ) : (
+                <div key={i} className="h-5" />
+              )
+            )}
+          </div>
+        ) : (
+          <div className="flex h-full flex-col items-start justify-center gap-3 pb-16">
+            <Mic2 className="h-9 w-9 text-white/60" />
+            <h3 className="text-2xl font-extrabold">No lyrics for this song</h3>
+            <p className="max-w-xs text-sm font-medium text-white/70">
+              {lyricsError || 'We couldn\u2019t find lyrics for this track.'}
+            </p>
+          </div>
+        )}
+      </div>
 
-  return (
+      {isSynced && userScrolling && activeLine >= 0 && (
+        <button
+          onClick={() => { setUserScrolling(false); centerLine(activeLine); }}
+          className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-extrabold text-black shadow-xl transition active:scale-95"
+        >
+          <RefreshCw className="h-3.5 w-3.5" /> Back to current line
+        </button>
+      )}
+    </div>
+  );
+
+  /* ── Queue body (shared) ── */
+  const playFromQueue = (idx) => {
+    onPlayQueueTrack?.(idx);
+    if (!isWide) setView('player');
+  };
+
+  const queueRow = (track, idx, dim) => (
+    <li key={`${track.id}_${idx}`} className={dim ? 'opacity-70' : ''}>
+      <button
+        onClick={() => playFromQueue(idx)}
+        className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition hover:bg-white/10 active:bg-white/10"
+      >
+        <img src={upgradeImg(track.image)} alt="" loading="lazy" className="h-12 w-12 shrink-0 rounded object-cover" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[15px] font-bold">{decodeHTMLEntities(track.title)}</p>
+          <p className="truncate text-sm text-white/60">{decodeHTMLEntities(track.subtitle || '')}</p>
+        </div>
+      </button>
+    </li>
+  );
+
+  const queueBody = (
+    <div className="sp-noscroll min-h-0 flex-1 overflow-y-auto px-3 pb-6 sm:px-4">
+      {queue.length === 0 ? (
+        <p className="py-20 text-center text-sm font-medium text-white/60">Your queue is empty. Play a song to get started.</p>
+      ) : (
+        <>
+          {queue[queueIndex] && (
+            <>
+              <p className="px-2 pt-2 pb-2 text-base font-extrabold">Now playing</p>
+              <div ref={queueActiveRef} className="flex items-center gap-3 rounded-lg p-2">
+                <img src={upgradeImg(queue[queueIndex].image)} alt="" className="h-12 w-12 shrink-0 rounded object-cover" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-bold" style={{ color: GREEN }}>{decodeHTMLEntities(queue[queueIndex].title)}</p>
+                  <p className="truncate text-sm text-white/60">{decodeHTMLEntities(queue[queueIndex].subtitle || '')}</p>
+                </div>
+                {isPlaying && equaliser}
+              </div>
+            </>
+          )}
+          {nextTrack && (
+            <>
+              <p className="px-2 pt-5 pb-2 text-base font-extrabold">Next in queue</p>
+              <ul>{queue.map((t, i) => (i > queueIndex ? queueRow(t, i) : null))}</ul>
+            </>
+          )}
+          {queueIndex > 0 && (
+            <>
+              <p className="px-2 pt-5 pb-2 text-base font-extrabold">Previously played</p>
+              <ul>{queue.slice(0, queueIndex).map((t, i) => queueRow(t, i, true))}</ul>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+
+  /* ── shell ── */
+  const shell = (maxW, children) => (
     <div
       className="fixed inset-0 z-50 flex h-[100dvh] justify-center overflow-hidden bg-[#121212] text-white select-none"
       role="dialog"
       aria-label="Now playing"
     >
       <style>{CSS}</style>
-
-      {/* Artwork-tinted background (cross-fades when the colour changes) */}
       <div
         key={rgbStr}
         className="sp-fade pointer-events-none absolute inset-0"
         style={{ background: `linear-gradient(180deg, rgb(${rgbStr}) 0%, rgb(${deep}) 62%, #121212 100%)` }}
       />
+      <div className={`relative flex h-full w-full ${maxW} flex-col`}>{children}</div>
+    </div>
+  );
 
-      <div className="relative flex h-full w-full max-w-[480px] flex-col">
-        {/* ═════════ PLAYER VIEW ═════════ */}
-        {view === 'player' && (
-          <>
-            <header
-              className="flex shrink-0 items-center justify-between px-3"
-              style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+  /* ═════════════ WIDE: tablet / desktop / landscape ═════════════ */
+  if (isWide) {
+    const tabs = [
+      ['lyrics', 'Lyrics', Mic2],
+      ['queue', `Queue${queue.length ? ` \u00B7 ${queue.length}` : ''}`, ListMusic]
+    ];
+    return shell(
+      'max-w-[1280px]',
+      <>
+        <header
+          className="flex shrink-0 items-center justify-between px-4 pb-1 xl:px-8"
+          style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}
+        >
+          <button onClick={onClose} aria-label="Close player (Esc)" title="Close (Esc)" className={`${ghost} h-11 w-11`}>
+            <ChevronDown className="h-7 w-7" />
+          </button>
+          <div className="min-w-0 px-2 text-center">
+            <p className="text-[11px] font-medium text-white/70">Now playing</p>
+            <p className="truncate text-xs font-bold">{queue.length > 1 ? `Queue \u2022 ${queue.length} songs` : 'Single'}</p>
+          </div>
+          <div className="flex items-center gap-1">
+            {bitrate && <span className="hidden rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-bold md:inline">{bitrate} kbps</span>}
+            <button onClick={onOpenDevicePicker} aria-label={`Output device: ${deviceName}`} className={`${ghost} h-11 w-11 ${deviceActive ? 'text-[#1ed760]' : ''}`}>
+              <DeviceIcon className="h-5 w-5" />
+            </button>
+          </div>
+        </header>
+
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(300px,420px)_minmax(0,1fr)] gap-6 px-4 pb-4 xl:gap-12 xl:px-10 xl:pb-8">
+          {/* Left: now playing */}
+          <section className="sp-noscroll flex min-h-0 flex-col overflow-y-auto">
+            <div className="my-auto space-y-3 py-2">
+              {artwork('44dvh')}
+              <div className="pt-1">{titleRow}</div>
+              {scrubber}
+              {transport}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center">{deviceButton}{visButton}</div>
+                <div className="w-32 xl:w-40">{volumeRow}</div>
+              </div>
+            </div>
+          </section>
+
+          {/* Right: lyrics / queue panel */}
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-black/25 ring-1 ring-white/10 backdrop-blur-xl">
+            <div className="flex shrink-0 items-center justify-between gap-3 px-4 pt-3 pb-1">
+              <div role="tablist" className="flex items-center gap-1 rounded-full bg-black/30 p-1">
+                {tabs.map(([id, label, Icon]) => (
+                  <button
+                    key={id}
+                    role="tab"
+                    aria-selected={panel === id}
+                    onClick={() => setView(id)}
+                    className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition ${
+                      panel === id ? 'bg-white text-black' : 'text-white/70 hover:text-white'
+                    }`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {panel === 'lyrics' && (
+                <div className="flex items-center gap-1">{scriptToggle}{copyBtn}</div>
+              )}
+            </div>
+            {panel === 'lyrics' ? lyricsBody : queueBody}
+          </section>
+        </div>
+      </>
+    );
+  }
+
+  /* ═════════════ NARROW: phones & portrait tablets ═════════════ */
+  return shell(
+    'max-w-[520px]',
+    <>
+      {view === 'player' && (
+        <>
+          <header
+            className="flex shrink-0 items-center justify-between px-3"
+            style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+          >
+            <button onClick={onClose} aria-label="Close player" className={`${ghost} h-11 w-11`}>
+              <ChevronDown className="h-7 w-7" />
+            </button>
+            <div className="min-w-0 px-2 text-center">
+              <p className="text-[11px] font-medium text-white/70">Now playing</p>
+              <p className="truncate text-xs font-bold">{queue.length > 1 ? `Queue \u2022 ${queue.length} songs` : 'Single'}</p>
+            </div>
+            <button onClick={onOpenDevicePicker} aria-label={`Output device: ${deviceName}`} className={`${ghost} h-11 w-11 ${deviceActive ? 'text-[#1ed760]' : ''}`}>
+              <DeviceIcon className="h-5 w-5" />
+            </button>
+          </header>
+
+          <main
+            ref={mainRef}
+            onTouchStart={onTouchStart}
+            onTouchEnd={onTouchEnd}
+            className="sp-noscroll min-h-0 flex-1 overflow-y-auto px-6 pb-4"
+          >
+            <div className="pt-4 pb-6 sm:pt-6">{artwork('46dvh')}</div>
+            {titleRow}
+            <div className="mt-4">{scrubber}</div>
+            <div className="mt-2">{transport}</div>
+
+            <div className="mt-5 flex items-center justify-between">
+              {deviceButton}
+              <div className="flex items-center gap-1">
+                {visButton}
+                <button onClick={() => setView('queue')} aria-label="Open queue" className={`${ghost} h-10 w-10 text-white/75`}>
+                  <ListMusic className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Lyrics preview card */}
+            <div
+              className="mt-5 overflow-hidden rounded-xl p-4"
+              style={{ background: `rgb(${rgb.map((v) => Math.min(255, Math.round(v * 1.25 + 14))).join(',')})` }}
             >
-              <button onClick={onClose} aria-label="Close player" className={`${iconBtn} h-11 w-11`}>
-                <ChevronDown className="h-7 w-7" />
-              </button>
-              <div className="min-w-0 px-2 text-center">
-                <p className="text-[11px] font-medium text-white/70">Now playing</p>
-                <p className="truncate text-xs font-bold">{queue.length > 1 ? `Queue \u2022 ${queue.length} songs` : 'Single'}</p>
-              </div>
-              <button
-                onClick={onOpenDevicePicker}
-                aria-label={`Output device: ${deviceName}`}
-                className={`${iconBtn} h-11 w-11 ${deviceActive ? 'text-[#1ed760]' : ''}`}
-              >
-                <DeviceIcon className="h-5 w-5" />
-              </button>
-            </header>
-
-            <main className="sp-noscroll min-h-0 flex-1 overflow-y-auto px-6 pb-4">
-              {/* Artwork / visualizer */}
-              <div className="flex justify-center pt-4 pb-6 sm:pt-6">
-                <button
-                  onClick={() => setVisMode((m) => (m + 1 >= VIS_MODES.length ? -1 : m + 1))}
-                  aria-label="Toggle visualizer"
-                  className={`relative aspect-square w-full overflow-hidden rounded-lg bg-black/30 shadow-[0_20px_50px_rgba(0,0,0,.55)] transition-transform duration-500 ease-out ${
-                    isPlaying ? 'scale-100' : 'scale-[0.86]'
-                  }`}
-                  style={{ maxWidth: 'min(100%, 46dvh)' }}
-                >
-                  <img src={art} alt={`${title} cover`} className="h-full w-full object-cover" />
-                  {visMode >= 0 && (
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm">
-                      <AudioVisualizer audioRef={audioRef} isPlaying={isPlaying} mode={VIS_MODES[visMode]} />
-                    </div>
-                  )}
-                </button>
-              </div>
-
-              {/* Title row */}
-              <div className="flex items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <h2 className="line-clamp-2 text-[22px] font-extrabold leading-tight tracking-tight">{title}</h2>
-                  <p className="mt-0.5 flex items-center gap-1.5 truncate text-[15px] font-medium text-white/70">
-                    {explicit && (
-                      <span className="shrink-0 rounded-[3px] bg-white/60 px-1 text-[10px] font-bold leading-4 text-black">E</span>
-                    )}
-                    <span className="truncate">{artist}</span>
-                  </p>
-                </div>
-                {onOpenAddToPlaylist && (
-                  <button
-                    onClick={() => onOpenAddToPlaylist(currentTrack)}
-                    aria-label="Add to playlist"
-                    className={`${iconBtn} h-11 w-11 text-white/85`}
-                  >
-                    <ListPlus className="h-6 w-6" />
-                  </button>
-                )}
-                <button
-                  onClick={() => toggleFavorite(currentTrack)}
-                  aria-label={isFavorite ? 'Remove from favourites' : 'Add to favourites'}
-                  aria-pressed={isFavorite}
-                  className={`${iconBtn} h-11 w-11 ${isFavorite ? 'text-[#1ed760]' : 'text-white/85'}`}
-                >
-                  <Heart className={`h-6 w-6 ${isFavorite ? 'fill-current' : ''}`} />
-                </button>
-              </div>
-
-              <div className="mt-4">{scrubber}</div>
-              <div className="mt-2">{transport}</div>
-
-              {/* Utility row */}
-              <div className="mt-5 flex items-center justify-between">
-                <button
-                  onClick={onOpenDevicePicker}
-                  className={`${iconBtn} h-10 gap-2 px-2 text-xs font-bold ${deviceActive ? 'text-[#1ed760]' : 'text-white/75'}`}
-                >
-                  <DeviceIcon className="h-[18px] w-[18px]" />
-                  <span className="max-w-[140px] truncate">{deviceName}</span>
-                </button>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setVisMode((m) => (m >= 0 ? -1 : 0))}
-                    aria-label="Visualizer"
-                    aria-pressed={visMode >= 0}
-                    className={`${iconBtn} h-10 w-10 ${visMode >= 0 ? 'text-[#1ed760]' : 'text-white/75'}`}
-                  >
-                    <Activity className="h-5 w-5" />
-                  </button>
-                  <button onClick={() => setView('queue')} aria-label="Open queue" className={`${iconBtn} h-10 w-10 text-white/75`}>
-                    <ListMusic className="h-5 w-5" />
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="text-sm font-extrabold">Lyrics</span>
+                <div className="flex items-center gap-2">
+                  {scriptToggle}
+                  <button onClick={() => setView('lyrics')} className="shrink-0 rounded-full bg-black/25 px-3 py-1 text-[11px] font-bold transition active:scale-95">
+                    Show lyrics
                   </button>
                 </div>
               </div>
-
-              {/* Lyrics preview card (tap to expand) */}
-              <button
-                onClick={() => setView('lyrics')}
-                className="mt-5 w-full overflow-hidden rounded-xl p-4 text-left transition active:scale-[0.98]"
-                style={{ background: `rgb(${rgb.map((v) => Math.min(255, Math.round(v * 1.25 + 14))).join(',')})` }}
-              >
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <span className="text-sm font-extrabold">Lyrics</span>
-                  {isIndicSong && (
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex items-center rounded-full bg-black/40 p-0.5 text-[10px] font-bold"
-                    >
-                      <button
-                        onClick={() => setScriptMode('original')}
-                        className={`rounded-full px-2.5 py-0.5 transition ${
-                          scriptMode === 'original' ? 'bg-white text-black font-extrabold' : 'text-white/70 hover:text-white'
-                        }`}
-                      >
-                        Original
-                      </button>
-                      <button
-                        onClick={() => setScriptMode('english')}
-                        className={`rounded-full px-2.5 py-0.5 transition ${
-                          scriptMode === 'english' ? 'bg-white text-black font-extrabold' : 'text-white/70 hover:text-white'
-                        }`}
-                      >
-                        English
-                      </button>
-                    </div>
-                  )}
-                  <span className="rounded-full bg-black/25 px-3 py-1 text-[11px] font-bold shrink-0">Show lyrics</span>
-                </div>
+              <button onClick={() => setView('lyrics')} className="block w-full text-left">
                 {lyricsLoading ? (
                   <div className="space-y-2">
                     <div className="h-5 w-4/5 animate-pulse rounded bg-white/20" />
@@ -560,310 +891,106 @@ export default function ExpandedPlayer({
                   <p className="text-sm font-medium text-white/75">{lyricsError || 'No lyrics for this song.'}</p>
                 )}
               </button>
+            </div>
 
-              {/* About */}
-              {(year || language || plays) && (
-                <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-white/75">
-                  {language && <span className="rounded-full bg-white/10 px-3 py-1">{language}</span>}
-                  {year && <span className="rounded-full bg-white/10 px-3 py-1">{year}</span>}
-                  {plays && <span className="rounded-full bg-white/10 px-3 py-1">{plays} plays</span>}
-                  {bitrate && <span className="rounded-full bg-white/10 px-3 py-1">{bitrate} kbps</span>}
-                </div>
-              )}
-
-              {/* Up next peek */}
-              {nextTrack && (
-                <button
-                  onClick={() => setView('queue')}
-                  className="mt-4 flex w-full items-center gap-3 rounded-xl bg-black/25 p-2.5 text-left transition active:scale-[0.98]"
-                >
-                  <img src={upgradeImg(nextTrack.image)} alt="" className="h-12 w-12 shrink-0 rounded object-cover" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-medium text-white/60">Next in queue</p>
-                    <p className="truncate text-sm font-bold">{decodeHTMLEntities(nextTrack.title)}</p>
-                    <p className="truncate text-xs text-white/60">{decodeHTMLEntities(nextTrack.subtitle || '')}</p>
-                  </div>
-                </button>
-              )}
-
-              {/* Volume */}
-              <div className="mt-5 hidden items-center gap-3 sm:flex">
-                <button onClick={handleToggleMute} aria-label={isMuted ? 'Unmute' : 'Mute'} className={`${iconBtn} h-9 w-9 text-white/80`}>
-                  {isMuted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
-                </button>
-                <input
-                  type="range"
-                  aria-label="Volume"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={isMuted ? 0 : volume}
-                  onChange={handleVolumeChange}
-                  className="sp-range"
-                  style={{ '--track': `linear-gradient(to right,#fff ${volPct}%,rgba(255,255,255,.3) ${volPct}%)` }}
-                />
-              </div>
-              <div style={{ height: 'env(safe-area-inset-bottom)' }} />
-            </main>
-          </>
-        )}
-
-        {/* ═════════ LYRICS VIEW (full-screen, Spotify style) ═════════ */}
-        {view === 'lyrics' && (
-          <div className="sp-up absolute inset-0 z-10 flex flex-col">
-            <header
-              className="flex shrink-0 items-center gap-2 px-3 pb-2"
-              style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
-            >
-              <button onClick={() => setView('player')} aria-label="Back to player" className={`${iconBtn} h-11 w-11`}>
-                <ChevronDown className="h-7 w-7" />
-              </button>
-              <div className="min-w-0 flex-1 text-center">
-                <p className="truncate text-sm font-extrabold">{title}</p>
-                <p className="truncate text-xs font-medium text-white/70">{artist}</p>
-              </div>
-              {lyricsText ? (
-                <button onClick={copyLyrics} aria-label="Copy lyrics" className={`${iconBtn} h-11 w-11`}>
-                  {copied ? <Check className="h-5 w-5 text-[#1ed760]" /> : <Copy className="h-5 w-5" />}
-                </button>
-              ) : (
-                <span className="h-11 w-11" />
-              )}
-            </header>
-
-            {/* Original vs English Text Language Selector */}
-            {isIndicSong && (
-              <div className="flex shrink-0 items-center justify-center pb-2 pt-1">
-                <div className="flex items-center rounded-full bg-white/15 p-1 text-xs font-bold shadow-md backdrop-blur-sm">
-                  <button
-                    onClick={() => setScriptMode('original')}
-                    className={`rounded-full px-4 py-1 transition ${
-                      scriptMode === 'original' ? 'bg-white text-black font-extrabold shadow-sm' : 'text-white/70 hover:text-white'
-                    }`}
-                  >
-                    Original Script
-                  </button>
-                  <button
-                    onClick={() => setScriptMode('english')}
-                    className={`rounded-full px-4 py-1 transition ${
-                      scriptMode === 'english' ? 'bg-white text-black font-extrabold shadow-sm' : 'text-white/70 hover:text-white'
-                    }`}
-                  >
-                    English Text
-                  </button>
-                </div>
+            {(year || language || plays || bitrate) && (
+              <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-white/75">
+                {language && <span className="rounded-full bg-white/10 px-3 py-1">{language}</span>}
+                {year && <span className="rounded-full bg-white/10 px-3 py-1">{year}</span>}
+                {plays && <span className="rounded-full bg-white/10 px-3 py-1">{plays} plays</span>}
+                {bitrate && <span className="rounded-full bg-white/10 px-3 py-1">{bitrate} kbps</span>}
               </div>
             )}
 
-            <div
-              ref={lyricsScrollRef}
-              onTouchMove={pauseAutoScroll}
-              onWheel={pauseAutoScroll}
-              onPointerDown={pauseAutoScroll}
-              className="sp-noscroll relative min-h-0 flex-1 select-text overflow-y-auto px-6"
-              style={{
-                WebkitMaskImage: 'linear-gradient(to bottom,transparent 0,#000 7%,#000 88%,transparent 100%)',
-                maskImage: 'linear-gradient(to bottom,transparent 0,#000 7%,#000 88%,transparent 100%)'
-              }}
-            >
-              {lyricsLoading ? (
-                <div className="flex h-full flex-col items-center justify-center gap-3 text-white/70">
-                  <Loader2 className="h-7 w-7 animate-spin" />
-                  <p className="text-sm font-semibold">Loading lyrics</p>
-                </div>
-              ) : isSynced ? (
-                <ul className="pt-[18dvh] pb-[45dvh]">
-                  {displayLyrics.map((line, i) => {
-                    const active = i === activeLine;
-                    const past = i < activeLine;
-                    return (
-                      <li key={`${line.time}-${i}`} ref={(el) => (lineRefs.current[i] = el)}>
-                        <button
-                          onClick={() => {
-                            seekTo(line.time);
-                            setUserScrolling(false);
-                          }}
-                          className={`block w-full origin-left py-2.5 text-left text-[28px] font-extrabold leading-[1.18] tracking-tight transition-all duration-300 sm:text-[32px] ${
-                            active
-                              ? 'scale-100 text-white'
-                              : past
-                              ? 'scale-[0.97] text-white/55 hover:text-white/80'
-                              : 'scale-[0.97] text-white/30 hover:text-white/60'
-                          }`}
-                        >
-                          {line.text}
-                        </button>
-                      </li>
-                    );
-                  })}
-                  {(lyricsData?.provider || lyricsData?.lyrics_copyright) && (
-                    <li className="mt-10 space-y-1 text-xs font-medium text-white/50">
-                      {lyricsData.provider && <p>Lyrics provided by {lyricsData.provider}</p>}
-                      {lyricsData.lyrics_copyright && <p>{lyricsData.lyrics_copyright}</p>}
-                    </li>
-                  )}
-                </ul>
-              ) : displaySheetText ? (
-                <div className="space-y-1 pt-[10dvh] pb-[30dvh]">
-                  {displaySheetText.split('\n').map((l, i) =>
-                    l.trim() ? (
-                      <p key={i} className="text-[26px] font-extrabold leading-[1.2] tracking-tight text-white">
-                        {l.trim()}
-                      </p>
-                    ) : (
-                      <div key={i} className="h-5" />
-                    )
-                  )}
-                </div>
-              ) : (
-                <div className="flex h-full flex-col items-start justify-center gap-3 pb-24">
-                  <Mic2 className="h-9 w-9 text-white/60" />
-                  <h3 className="text-2xl font-extrabold">No lyrics for this song</h3>
-                  <p className="max-w-xs text-sm font-medium text-white/70">
-                    {lyricsError || 'We couldn\u2019t find lyrics for this track.'}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Re-sync pill */}
-            {isSynced && userScrolling && activeLine >= 0 && (
+            {nextTrack && (
               <button
-                onClick={() => {
-                  setUserScrolling(false);
-                  centerLine(activeLine);
-                }}
-                className="absolute bottom-[132px] left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-extrabold text-black shadow-xl transition active:scale-95"
+                onClick={() => setView('queue')}
+                className="mt-4 flex w-full items-center gap-3 rounded-xl bg-black/25 p-2.5 text-left transition active:scale-[0.98]"
               >
-                <RefreshCw className="h-3.5 w-3.5" /> Back to current line
-              </button>
-            )}
-
-            {/* Mini controls */}
-            <footer
-              className="shrink-0 px-6 pt-2"
-              style={{
-                paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
-                background: `linear-gradient(to top, rgb(${deep}) 55%, transparent)`
-              }}
-            >
-              {scrubber}
-              <div className="mt-1 flex items-center justify-center gap-6">
-                <button onClick={handlePrevTrack} aria-label="Previous" className={`${iconBtn} h-11 w-11`}>
-                  <SkipBack className="h-7 w-7 fill-current" />
-                </button>
-                {playButton('h-14 w-14', 'h-6 w-6')}
-                <button onClick={handleNextTrack} aria-label="Next" className={`${iconBtn} h-11 w-11`}>
-                  <SkipForward className="h-7 w-7 fill-current" />
-                </button>
-              </div>
-            </footer>
-          </div>
-        )}
-
-        {/* ═════════ QUEUE VIEW ═════════ */}
-        {view === 'queue' && (
-          <div className="sp-up absolute inset-0 z-10 flex flex-col bg-[#121212]">
-            <header
-              className="flex shrink-0 items-center gap-2 px-3 pb-2"
-              style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
-            >
-              <button onClick={() => setView('player')} aria-label="Back to player" className={`${iconBtn} h-11 w-11`}>
-                <ArrowLeft className="h-6 w-6" />
-              </button>
-              <h3 className="flex-1 text-center text-base font-extrabold">Queue</h3>
-              <span className="h-11 w-11" />
-            </header>
-
-            <div className="sp-noscroll min-h-0 flex-1 overflow-y-auto px-4 pb-6">
-              {queue.length === 0 ? (
-                <p className="py-20 text-center text-sm font-medium text-white/60">
-                  Your queue is empty. Play a song to get started.
-                </p>
-              ) : (
-                <>
-                  {queue[queueIndex] && (
-                    <>
-                      <p className="px-2 pt-2 pb-2 text-base font-extrabold">Now playing</p>
-                      <div ref={queueActiveRef} className="flex items-center gap-3 rounded-lg p-2">
-                        <img src={upgradeImg(queue[queueIndex].image)} alt="" className="h-12 w-12 shrink-0 rounded object-cover" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[15px] font-bold text-[#1ed760]">{decodeHTMLEntities(queue[queueIndex].title)}</p>
-                          <p className="truncate text-sm text-white/60">{decodeHTMLEntities(queue[queueIndex].subtitle || '')}</p>
-                        </div>
-                        {isPlaying && equaliser}
-                      </div>
-                    </>
-                  )}
-
-                  <p className="px-2 pt-5 pb-2 text-base font-extrabold">Next in queue</p>
-                  <ul>
-                    {queue.map((track, idx) =>
-                      idx <= queueIndex ? null : (
-                        <li key={`${track.id}_${idx}`}>
-                          <button
-                            onClick={() => {
-                              onPlayQueueTrack(idx);
-                              setView('player');
-                            }}
-                            className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition active:bg-white/10"
-                          >
-                            <img src={upgradeImg(track.image)} alt="" className="h-12 w-12 shrink-0 rounded object-cover" />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-[15px] font-bold">{decodeHTMLEntities(track.title)}</p>
-                              <p className="truncate text-sm text-white/60">{decodeHTMLEntities(track.subtitle || '')}</p>
-                            </div>
-                          </button>
-                        </li>
-                      )
-                    )}
-                  </ul>
-
-                  {queueIndex > 0 && (
-                    <>
-                      <p className="px-2 pt-5 pb-2 text-base font-extrabold">Previously played</p>
-                      <ul className="opacity-70">
-                        {queue.slice(0, queueIndex).map((track, idx) => (
-                          <li key={`${track.id}_p${idx}`}>
-                            <button
-                              onClick={() => {
-                                onPlayQueueTrack(idx);
-                                setView('player');
-                              }}
-                              className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition active:bg-white/10"
-                            >
-                              <img src={upgradeImg(track.image)} alt="" className="h-12 w-12 shrink-0 rounded object-cover" />
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-[15px] font-bold">{decodeHTMLEntities(track.title)}</p>
-                                <p className="truncate text-sm text-white/60">{decodeHTMLEntities(track.subtitle || '')}</p>
-                              </div>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* Mini bar so playback stays controllable */}
-            {currentTrack && (
-              <div
-                className="flex shrink-0 items-center gap-3 border-t border-white/10 bg-[#181818] px-4 py-2"
-                style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
-              >
-                <img src={art} alt="" className="h-10 w-10 rounded object-cover" />
+                <img src={upgradeImg(nextTrack.image)} alt="" className="h-12 w-12 shrink-0 rounded object-cover" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold">{title}</p>
-                  <p className="truncate text-xs text-white/60">{artist}</p>
+                  <p className="text-[11px] font-medium text-white/60">Next in queue</p>
+                  <p className="truncate text-sm font-bold">{decodeHTMLEntities(nextTrack.title)}</p>
+                  <p className="truncate text-xs text-white/60">{decodeHTMLEntities(nextTrack.subtitle || '')}</p>
                 </div>
-                {playButton('h-10 w-10', 'h-5 w-5')}
-              </div>
+              </button>
             )}
+
+            <div className="mt-5 hidden sm:block">{volumeRow}</div>
+            <div style={{ height: 'env(safe-area-inset-bottom)' }} />
+          </main>
+        </>
+      )}
+
+      {view === 'lyrics' && (
+        <div className="sp-up absolute inset-0 z-10 flex flex-col">
+          <header
+            className="flex shrink-0 items-center gap-2 px-3 pb-2"
+            style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+          >
+            <button onClick={() => setView('player')} aria-label="Back to player" className={`${ghost} h-11 w-11`}>
+              <ChevronDown className="h-7 w-7" />
+            </button>
+            <div className="min-w-0 flex-1 text-center">
+              <p className="truncate text-sm font-extrabold">{title}</p>
+              <p className="truncate text-xs font-medium text-white/70">{artist}</p>
+            </div>
+            {copyBtn || <span className="h-10 w-10" />}
+          </header>
+
+          {isIndicSong && <div className="flex shrink-0 justify-center pb-2">{scriptToggle}</div>}
+
+          {lyricsBody}
+
+          <footer
+            className="shrink-0 px-6 pt-2"
+            style={{
+              paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+              background: `linear-gradient(to top, rgb(${deep}) 55%, transparent)`
+            }}
+          >
+            {scrubber}
+            <div className="mt-1 flex items-center justify-center gap-6">
+              <button onClick={handlePrevTrack} aria-label="Previous" className={`${ghost} h-11 w-11`}>
+                <SkipBack className="h-7 w-7 fill-current" />
+              </button>
+              {playButton('h-14 w-14', 'h-6 w-6')}
+              <button onClick={handleNextTrack} aria-label="Next" className={`${ghost} h-11 w-11`}>
+                <SkipForward className="h-7 w-7 fill-current" />
+              </button>
+            </div>
+          </footer>
+        </div>
+      )}
+
+      {view === 'queue' && (
+        <div className="sp-up absolute inset-0 z-10 flex flex-col bg-[#121212]">
+          <header
+            className="flex shrink-0 items-center gap-2 px-3 pb-2"
+            style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+          >
+            <button onClick={() => setView('player')} aria-label="Back to player" className={`${ghost} h-11 w-11`}>
+              <ArrowLeft className="h-6 w-6" />
+            </button>
+            <h3 className="flex-1 text-center text-base font-extrabold">Queue</h3>
+            <span className="h-11 w-11" />
+          </header>
+
+          {queueBody}
+
+          <div
+            className="flex shrink-0 items-center gap-3 border-t border-white/10 bg-[#181818] px-4 py-2"
+            style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+          >
+            <img src={art} alt="" className="h-10 w-10 rounded object-cover" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold">{title}</p>
+              <p className="truncate text-xs text-white/60">{artist}</p>
+            </div>
+            {playButton('h-10 w-10', 'h-5 w-5')}
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </>
   );
 }
