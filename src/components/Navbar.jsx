@@ -12,7 +12,6 @@ import {
   Disc,
   Radio,
   Sparkles,
-  User,
   LogIn,
   ShieldAlert,
   Clock,
@@ -70,12 +69,11 @@ export default function Navbar({
   }, [showMobileSpotlightMenu]);
 
   const hasSuggestions =
-    autoSuggestions.songs.length > 0 ||
-    autoSuggestions.albums.length > 0 ||
-    autoSuggestions.artists.length > 0 ||
-    searchHistory.length > 0;
+    autoSuggestions?.songs?.length > 0 ||
+    autoSuggestions?.albums?.length > 0 ||
+    autoSuggestions?.artists?.length > 0 ||
+    searchHistory?.length > 0;
 
-  // Extract source data for mobile spotlight
   const getSourceData = () => {
     if (!footerDetails) return { artists: [], actors: [], albums: [], playlists: [] };
     return footerDetails.all || footerDetails;
@@ -98,7 +96,7 @@ export default function Navbar({
 
   return (
     <header
-      className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-xl border-b border-slate-800/80 px-3 sm:px-6 py-3 flex items-center justify-between gap-3 relative"
+      className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-xl border-b border-slate-800/80 px-3 sm:px-6 py-2.5 flex items-center justify-between gap-3 relative"
       style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
     >
       {/* Mobile Brand */}
@@ -113,18 +111,21 @@ export default function Navbar({
         </div>
       </div>
 
-      {/* Search Input Container */}
-      <div ref={searchContainerRef} className="relative flex-1 max-w-xl">
+      {/* Search Input Container - Guaranteed stable width with responsive min/max boundaries */}
+      <div
+        ref={searchContainerRef}
+        className="relative flex-1 min-w-[220px] sm:min-w-[280px] md:min-w-[340px] max-w-xl"
+      >
         <form onSubmit={handleSearchSubmit} className="relative">
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => setShowSuggestions(true)}
-            placeholder="Search songs, albums, artists, playlists..."
-            className="w-full glass-input rounded-2xl pl-10 pr-9 py-2 text-xs sm:text-sm text-slate-100 placeholder-slate-400 outline-none transition focus:border-emerald-500/80 focus:ring-4 focus:ring-emerald-500/10 shadow-inner"
+            placeholder="Search songs, albums, artists..."
+            className="w-full glass-input bg-slate-900/90 border border-slate-800 rounded-2xl pl-10 pr-9 py-2 text-xs sm:text-sm text-slate-100 placeholder-slate-400 outline-none transition focus:border-emerald-500/80 focus:ring-4 focus:ring-emerald-500/10 shadow-inner"
           />
-          <Search className="w-4 h-4 text-emerald-400 absolute left-3.5 top-2.5 sm:top-3" />
+          <Search className="w-4 h-4 text-emerald-400 absolute left-3.5 top-2.5 sm:top-3 pointer-events-none" />
           {searchQuery && (
             <button
               type="button"
@@ -132,22 +133,22 @@ export default function Navbar({
                 setSearchQuery('');
                 setShowSuggestions(false);
               }}
-              className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
+              className="absolute right-3 top-2.5 sm:top-3 text-slate-400 hover:text-white"
             >
               <X className="w-4 h-4" />
             </button>
           )}
         </form>
 
-        {/* Search Autocomplete & Recent Search History Dropdown */}
+        {/* Dropdown - Fixed min-width ensures it never collapses into a column */}
         {showSuggestions && hasSuggestions && (
-          <div className="absolute top-full mt-2 w-full bg-[#0d121d] border border-emerald-500/40 rounded-2xl shadow-2xl shadow-black/90 overflow-hidden z-50 divide-y divide-slate-800/80 max-h-[75vh] overflow-y-auto">
+          <div className="absolute top-full left-0 mt-2 w-full min-w-[300px] sm:min-w-[420px] max-w-[560px] bg-[#0d121d] border border-emerald-500/40 rounded-2xl shadow-2xl shadow-black/90 overflow-hidden z-50 divide-y divide-slate-800/80 max-h-[75vh] overflow-y-auto">
             {/* Recent Search History Section */}
             {searchHistory.length > 0 && (
-              <div className="p-2.5">
-                <div className="flex items-center justify-between px-2 pb-1.5">
-                  <span className="text-[10px] font-black tracking-wider text-cyan-400 uppercase flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-cyan-400" />
+              <div className="p-3">
+                <div className="flex items-center justify-between px-1 pb-2">
+                  <span className="text-[10px] font-black tracking-wider text-cyan-400 uppercase flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-cyan-400" />
                     <span>Recent Searches</span>
                   </span>
                   {onClearSearchHistory && (
@@ -161,7 +162,7 @@ export default function Navbar({
                     </button>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-1.5 p-1">
+                <div className="flex flex-wrap gap-1.5">
                   {searchHistory.map((term, idx) => (
                     <button
                       key={idx}
@@ -170,7 +171,7 @@ export default function Navbar({
                         setSearchQuery(term);
                         handleSearchSubmit({ preventDefault: () => {} });
                       }}
-                      className="text-xs font-semibold px-3 py-1 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-emerald-500/50 transition"
+                      className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-emerald-500/50 transition truncate max-w-[200px]"
                     >
                       {term}
                     </button>
@@ -180,22 +181,22 @@ export default function Navbar({
             )}
 
             {/* Songs Category */}
-            {autoSuggestions.songs.length > 0 && (
-              <div className="p-2">
-                <span className="text-[10px] font-black tracking-wider text-emerald-400 uppercase px-3 py-1.5 block">
+            {autoSuggestions?.songs?.length > 0 && (
+              <div className="p-2.5">
+                <span className="text-[10px] font-black tracking-wider text-emerald-400 uppercase px-2.5 py-1 block">
                   Songs
                 </span>
                 {autoSuggestions.songs.map((song) => (
                   <div
                     key={song.id}
                     onClick={() => handleCardClick(song)}
-                    className="flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-800/90 transition cursor-pointer group"
+                    className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-800/90 transition cursor-pointer group"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0 pr-2">
                       <img
                         src={upgradeImg(song.image)}
                         alt=""
-                        className="w-9 h-9 rounded-lg object-cover bg-slate-800 shrink-0 border border-white/5"
+                        className="w-10 h-10 rounded-lg object-cover bg-slate-800 shrink-0 border border-white/5"
                       />
                       <div className="truncate">
                         <p className="text-xs font-bold text-slate-100 group-hover:text-emerald-400 truncate">
@@ -215,21 +216,21 @@ export default function Navbar({
             )}
 
             {/* Albums Category */}
-            {autoSuggestions.albums.length > 0 && (
-              <div className="p-2">
-                <span className="text-[10px] font-black tracking-wider text-cyan-400 uppercase px-3 py-1.5 block">
+            {autoSuggestions?.albums?.length > 0 && (
+              <div className="p-2.5">
+                <span className="text-[10px] font-black tracking-wider text-cyan-400 uppercase px-2.5 py-1 block">
                   Albums
                 </span>
                 {autoSuggestions.albums.map((album) => (
                   <div
                     key={album.id}
                     onClick={() => handleCardClick(album)}
-                    className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-800/90 transition cursor-pointer group"
+                    className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-800/90 transition cursor-pointer group"
                   >
                     <img
                       src={upgradeImg(album.image)}
                       alt=""
-                      className="w-9 h-9 rounded-lg object-cover bg-slate-800 shrink-0 border border-white/5"
+                      className="w-10 h-10 rounded-lg object-cover bg-slate-800 shrink-0 border border-white/5"
                     />
                     <div className="truncate">
                       <p className="text-xs font-bold text-slate-100 group-hover:text-cyan-400 truncate">
@@ -245,21 +246,21 @@ export default function Navbar({
             )}
 
             {/* Artists Category */}
-            {autoSuggestions.artists.length > 0 && (
-              <div className="p-2">
-                <span className="text-[10px] font-black tracking-wider text-violet-400 uppercase px-3 py-1.5 block">
+            {autoSuggestions?.artists?.length > 0 && (
+              <div className="p-2.5">
+                <span className="text-[10px] font-black tracking-wider text-violet-400 uppercase px-2.5 py-1 block">
                   Artists
                 </span>
                 {autoSuggestions.artists.map((artist) => (
                   <div
                     key={artist.id}
                     onClick={() => handleCardClick(artist)}
-                    className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-800/90 transition cursor-pointer group"
+                    className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-800/90 transition cursor-pointer group"
                   >
                     <img
                       src={upgradeImg(artist.image)}
                       alt=""
-                      className="w-9 h-9 rounded-full object-cover bg-slate-800 shrink-0 border border-white/5"
+                      className="w-10 h-10 rounded-full object-cover bg-slate-800 shrink-0 border border-white/5"
                     />
                     <div className="truncate">
                       <p className="text-xs font-bold text-slate-100 group-hover:text-violet-400 truncate">
@@ -275,9 +276,9 @@ export default function Navbar({
         )}
       </div>
 
-      {/* Language Pills Toolbar */}
-      <div className="hidden xl:flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400 mr-1 shrink-0">
+      {/* Language Toolbar - Constrained with shrink-1 & flex-1 to prevent taking over the navbar */}
+      <div className="hidden 2xl:flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 shrink min-w-0 max-w-xl">
+        <div className="flex items-center gap-1 text-xs font-bold text-slate-400 mr-1 shrink-0">
           <Globe className="w-3.5 h-3.5 text-emerald-400" />
         </div>
         {ALL_LANGUAGES.map((lang) => {
@@ -299,14 +300,14 @@ export default function Navbar({
         })}
       </div>
 
-      {/* User Auth / Admin / Profile & Guest Limit Badge */}
-      <div className="flex items-center gap-2 shrink-0">
+      {/* User Auth / Admin / Profile & Limit */}
+      <div className="flex items-center gap-2 shrink-0 ml-auto">
         {user ? (
           <div className="flex items-center gap-2">
             {user.isAdmin && (
               <button
                 onClick={onOpenAdmin}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-black hover:bg-cyan-500 hover:text-slate-950 transition shadow-lg shadow-cyan-500/20"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-black hover:bg-cyan-500 hover:text-slate-950 transition shadow-lg shadow-cyan-500/20 shrink-0"
                 title="Admin Control Panel"
               >
                 <ShieldAlert className="w-3.5 h-3.5" />
@@ -316,11 +317,14 @@ export default function Navbar({
 
             <button
               onClick={onOpenProfile}
-              className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition group"
+              className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition group shrink-0"
               title="User Profile & Settings"
             >
               <img
-                src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=10b981&color=fff&bold=true`}
+                src={
+                  user.avatar ||
+                  `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=10b981&color=fff&bold=true`
+                }
                 alt=""
                 className="w-7 h-7 rounded-xl object-cover border border-emerald-500/40 shrink-0"
               />
@@ -330,16 +334,17 @@ export default function Navbar({
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
-            {/* Guest 15-Min Limit Badge */}
-            <div className="hidden xs:flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] font-mono text-slate-300">
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="hidden xs:flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] font-mono text-slate-300 shrink-0">
               <Timer className="w-3.5 h-3.5 text-pink-400 animate-pulse" />
-              <span>Guest: <strong className="text-emerald-400">{formatGuestTime(guestTimeRemaining)}</strong></span>
+              <span>
+                Guest: <strong className="text-emerald-400">{formatGuestTime(guestTimeRemaining)}</strong>
+              </span>
             </div>
 
             <button
               onClick={() => onOpenAuth('login')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-400 text-slate-950 text-xs font-black shadow-lg shadow-emerald-500/20 hover:scale-105 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-400 text-slate-950 text-xs font-black shadow-lg shadow-emerald-500/20 hover:scale-105 transition shrink-0"
             >
               <LogIn className="w-3.5 h-3.5" />
               <span>Log In</span>
@@ -347,7 +352,7 @@ export default function Navbar({
           </div>
         )}
 
-        {/* 3-Dots Spotlight & Language Menu */}
+        {/* 3-Dots Spotlight & Language Drawer */}
         <div ref={spotlightMenuRef} className="relative shrink-0">
           <button
             onClick={() => setShowMobileSpotlightMenu(!showMobileSpotlightMenu)}
@@ -361,7 +366,6 @@ export default function Navbar({
             <MoreVertical className="w-4 h-4" />
           </button>
 
-          {/* Spotlight Drawer */}
           {showMobileSpotlightMenu && (
             <div className="absolute top-full right-0 mt-2.5 w-80 sm:w-96 bg-[#0d121d] border border-emerald-500/40 rounded-2xl shadow-2xl p-4 z-50 text-slate-100 divide-y divide-slate-800/80 max-h-[82vh] overflow-y-auto">
               <div className="pb-3.5">
