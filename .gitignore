@@ -32,4 +32,8 @@ build
 *.njsproj
 *.sln
 *.sw?
-Thumbs.db
+# Keystore & Signing
+*.keystore
+*.jks
+*.pepk
+keystore.properties

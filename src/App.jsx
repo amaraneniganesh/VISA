@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { registerPlugin } from '@capacitor/core';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import MobileNav from './components/MobileNav';
@@ -35,10 +36,16 @@ import {
   Play,
   Trash2,
   Clock,
-  Sparkles
+  Sparkles,
+  Film,
+  Disc,
+  Radio,
+  Download,
+  CheckCircle2
 } from 'lucide-react';
 
 const API_BASE = ' https://visa-server-7qzv.onrender.com/api';
+const MusicNotification = registerPlugin('MusicNotification');
 
 const ALL_LANGUAGES = [
   'telugu',
@@ -423,6 +430,24 @@ export default function App() {
     }
   });
 
+  // Downloads — persisted in localStorage so users keep their list even if data is lost
+  const [downloads, setDownloads] = useState(() => {
+    try {
+      const saved = localStorage.getItem('visa_downloads');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [downloadingId, setDownloadingId] = useState(null);
+
+  // Persist downloads whenever they change
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('visa_downloads', JSON.stringify(downloads));
+    } catch {}
+  }, [downloads]);
+
   // Toast Alerts State
   const [toastMessage, setToastMessage] = useState('');
 
@@ -445,6 +470,86 @@ export default function App() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 3500);
   };
+
+  // Sync state with Native Android Spotify-Style Media Notification Bar
+  useEffect(() => {
+    if (!currentTrack) return;
+    const title = decodeHTMLEntities(currentTrack.title || 'VISA MUSIC');
+    const artist = decodeHTMLEntities(currentTrack.subtitle || currentTrack.more_info?.music || currentTrack.artist || 'Artist');
+    const album = decodeHTMLEntities(currentTrack.album || currentTrack.more_info?.album || '');
+    const coverUrl = upgradeImg(currentTrack.image);
+    const durVal = duration || currentTrack.more_info?.duration || 0;
+
+    MusicNotification.show({
+      title,
+      artist,
+      album,
+      coverUrl,
+      isPlaying,
+      position: currentTime || 0,
+      duration: Number(durVal)
+    }).catch(() => {});
+  }, [currentTrack, isPlaying]);
+
+  useEffect(() => {
+    if (!currentTrack || !isPlaying) return;
+    const interval = setInterval(() => {
+      if (audioRef.current) {
+        const pos = audioRef.current.currentTime || 0;
+        const dur = audioRef.current.duration || duration || 0;
+        MusicNotification.updateState({
+          isPlaying: true,
+          position: pos,
+          duration: dur
+        }).catch(() => {});
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [currentTrack, isPlaying, duration]);
+
+  useEffect(() => {
+    let playSub, pauseSub, nextSub, prevSub, seekSub;
+    try {
+      playSub = MusicNotification.addListener('onPlay', () => {
+        if (audioRef.current && audioRef.current.src) {
+          audioRef.current.play().catch(() => {});
+          setIsPlaying(true);
+        }
+      });
+
+      pauseSub = MusicNotification.addListener('onPause', () => {
+        if (audioRef.current) {
+          audioRef.current.pause();
+          setIsPlaying(false);
+        }
+      });
+
+      nextSub = MusicNotification.addListener('onNext', () => {
+        handleNextTrack();
+      });
+
+      prevSub = MusicNotification.addListener('onPrevious', () => {
+        handlePrevTrack();
+      });
+
+      seekSub = MusicNotification.addListener('onSeek', (data) => {
+        if (data && typeof data.position === 'number' && audioRef.current) {
+          audioRef.current.currentTime = data.position;
+          setCurrentTime(data.position);
+        }
+      });
+    } catch { }
+
+    return () => {
+      try {
+        if (playSub) playSub.then((s) => s.remove()).catch(() => {});
+        if (pauseSub) pauseSub.then((s) => s.remove()).catch(() => {});
+        if (nextSub) nextSub.then((s) => s.remove()).catch(() => {});
+        if (prevSub) prevSub.then((s) => s.remove()).catch(() => {});
+        if (seekSub) seekSub.then((s) => s.remove()).catch(() => {});
+      } catch { }
+    };
+  }, [queue, queueIndex, isShuffle, repeatMode, currentTrack]);
 
   // ----------------------------------------------------
   // Guest Playback Interval Timer (900 seconds limit)
@@ -693,6 +798,61 @@ export default function App() {
     } finally {
       setSearchLoading(false);
     }
+  };
+
+  // Download a song — fetches stream URL via proxy then triggers browser download
+  const handleDownload = async (song) => {
+    if (!song || !song.id) return;
+    if (downloadingId === song.id) return;
+    const alreadyDownloaded = !!downloads[song.id];
+    if (alreadyDownloaded) {
+      showToast(`"${decodeHTMLEntities(song.title)}" is already in your downloads.`);
+      return;
+    }
+    setDownloadingId(song.id);
+    try {
+      const res = await fetch(`${API_BASE}/stream?id=${encodeURIComponent(song.id)}&bitrate=${bitrate || '160'}`);
+      if (!res.ok) throw new Error('Stream unavailable');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const fileName = `${decodeHTMLEntities(song.title || 'song').replace(/[^a-z0-9 ]/gi, '_')}.mp3`;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      // Save metadata so user keeps record even if local files are lost
+      setDownloads((prev) => ({
+        ...prev,
+        [song.id]: {
+          ...song,
+          downloadedAt: new Date().toISOString(),
+          fileName
+        }
+      }));
+      showToast(`Downloaded: ${decodeHTMLEntities(song.title)}`);
+    } catch (err) {
+      console.error('Download failed:', err);
+      showToast('Download failed — try again.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  // Download all songs in a list sequentially
+  const handleDownloadAll = async (songs) => {
+    if (!songs || songs.length === 0) return;
+    showToast(`Starting download of ${songs.length} tracks…`);
+    for (const song of songs) {
+      if (!downloads[song.id]) {
+        await handleDownload(song);
+        // Brief pause between downloads
+        await new Promise((r) => setTimeout(r, 800));
+      }
+    }
+    showToast('All downloads complete!');
   };
 
   const handleClearSearchHistory = async () => {
@@ -1467,24 +1627,30 @@ export default function App() {
             </div>
           ) : activeTab === 'search' ? (
             <div>
-              <div className="mb-6">
-                <h2 className="text-2xl sm:text-3xl font-black text-slate-100 tracking-tight">
-                  Search Results for "{searchQuery}"
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">Instant catalog discovery across songs, albums & artists</p>
+              {/* Mobile-first Search Header */}
+              <div className="mb-5">
+                <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-2 mb-1">
+                  <h2 className="text-xl sm:text-3xl font-black text-slate-100 tracking-tight leading-tight">
+                    <span className="text-emerald-400">"</span>{searchQuery}<span className="text-emerald-400">"</span>
+                  </h2>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-400 self-start xs:self-center shrink-0">
+                    {(searchResults.songs?.length || 0) + (searchResults.albums?.length || 0) + (searchResults.artists?.length || 0)} Results
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500">Songs · Albums · Artists</p>
               </div>
 
-              {/* Genre Quick Filters */}
-              <div className="mb-6 p-4 rounded-2xl glass-panel border border-slate-800">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-2.5">
-                  Popular Moods & Genre Exploration
+              {/* Genre Quick Filters — horizontally scrollable on mobile */}
+              <div className="mb-5 p-3 sm:p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-2">
+                  Genre & Mood Explorer
                 </span>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
                   {GENRE_TAGS.map((tag) => (
                     <button
                       key={tag}
                       onClick={() => handleSearchSubmit(null, tag)}
-                      className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/40 text-xs font-bold text-slate-300 hover:text-white transition"
+                      className="shrink-0 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 hover:border-emerald-500/40 text-[11px] font-bold text-slate-300 hover:text-white transition whitespace-nowrap"
                     >
                       {tag}
                     </button>
@@ -1503,14 +1669,24 @@ export default function App() {
               {searchLoading ? (
                 <GridSkeleton count={10} />
               ) : (
-                <div className="space-y-10">
+                <div className="space-y-8">
                   {/* Songs Search */}
                   {searchResults.songs?.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-extrabold text-slate-100 mb-4 flex items-center gap-2">
-                        <Music2 className="w-5 h-5 text-emerald-400" />
-                        <span>Songs ({searchResults.songs.length})</span>
-                      </h3>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-base sm:text-lg font-extrabold text-slate-100 flex items-center gap-2">
+                          <Music2 className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
+                          <span>Songs <span className="text-slate-500 font-normal">({searchResults.songs.length})</span></span>
+                        </h3>
+                        <button
+                          onClick={() => handleDownloadAll(searchResults.songs)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 text-[11px] font-bold transition"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Download All</span>
+                          <span className="sm:hidden">All</span>
+                        </button>
+                      </div>
                       <div className="space-y-2">
                         {sortItems(searchResults.songs, sortOption).map((song, idx) => (
                           <TrackRow
@@ -1524,6 +1700,9 @@ export default function App() {
                               setSelectedSongForPlaylist(songItem);
                               setIsPlaylistModalOpen(true);
                             }}
+                            onDownload={handleDownload}
+                            isDownloaded={!!downloads[song.id]}
+                            isDownloading={downloadingId === song.id}
                             isFavorite={!!favorites[song.id]}
                             currentTrack={currentTrack}
                             isPlaying={isPlaying}
@@ -1539,11 +1718,11 @@ export default function App() {
                   {/* Albums Search */}
                   {searchResults.albums?.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-extrabold text-slate-100 mb-4 flex items-center gap-2">
-                        <Layers className="w-5 h-5 text-cyan-400" />
-                        <span>Albums</span>
+                      <h3 className="text-base sm:text-lg font-extrabold text-slate-100 mb-3 flex items-center gap-2">
+                        <Layers className="w-4 h-4 sm:w-5 sm:h-5 text-cyan-400" />
+                        <span>Albums <span className="text-slate-500 font-normal">({searchResults.albums.length})</span></span>
                       </h3>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-6">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
                         {sortItems(searchResults.albums, sortOption).map((album) => (
                           <TrackCard
                             key={album.id}
@@ -1566,11 +1745,11 @@ export default function App() {
                   {/* Artists Search */}
                   {searchResults.artists?.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-extrabold text-slate-100 mb-4 flex items-center gap-2">
-                        <Users className="w-5 h-5 text-violet-400" />
-                        <span>Artists</span>
+                      <h3 className="text-base sm:text-lg font-extrabold text-slate-100 mb-3 flex items-center gap-2">
+                        <Users className="w-4 h-4 sm:w-5 sm:h-5 text-violet-400" />
+                        <span>Artists <span className="text-slate-500 font-normal">({searchResults.artists.length})</span></span>
                       </h3>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-6">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
                         {sortItems(searchResults.artists, sortOption).map((artist) => (
                           <TrackCard
                             key={artist.id}
@@ -1589,6 +1768,83 @@ export default function App() {
                       </div>
                     </div>
                   )}
+
+                  {/* Empty State */}
+                  {!searchLoading && searchResults.songs?.length === 0 && searchResults.albums?.length === 0 && searchResults.artists?.length === 0 && searchQuery && (
+                    <div className="text-center py-16 bg-slate-900/40 rounded-3xl border border-slate-800 space-y-3">
+                      <Music2 className="w-10 h-10 text-slate-600 mx-auto stroke-1" />
+                      <p className="text-sm font-bold text-slate-400">No results for "{searchQuery}"</p>
+                      <p className="text-xs text-slate-500">Try different keywords or explore genre tags above</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'downloads' ? (
+            <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-black text-slate-100 tracking-tight flex items-center gap-3">
+                    <Download className="w-7 h-7 text-cyan-400" />
+                    <span>My Downloads</span>
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-1">Songs you've downloaded — saved even if you lose local data</p>
+                </div>
+                {Object.keys(downloads).length > 0 && (
+                  <button
+                    onClick={() => {
+                      setDownloads({});
+                      showToast('Cleared download history');
+                    }}
+                    className="text-xs font-bold px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20 transition self-start sm:self-center"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+
+              {Object.keys(downloads).length === 0 ? (
+                <div className="text-center py-20 bg-slate-900/40 rounded-3xl border border-slate-800 p-8 space-y-3">
+                  <Download className="w-12 h-12 text-slate-600 mx-auto stroke-1" />
+                  <h3 className="text-base font-bold text-slate-300">No downloads yet</h3>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    Tap the <Download className="w-3 h-3 inline" /> download icon on any song to save it. Your download list is always remembered here.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {Object.values(downloads)
+                    .sort((a, b) => new Date(b.downloadedAt) - new Date(a.downloadedAt))
+                    .map((song, idx) => (
+                      <div key={song.id || idx} className="relative">
+                        <TrackRow
+                          song={song}
+                          index={idx}
+                          onPlay={() => handlePlayFullSong(song)}
+                          onAddToQueue={handleAddToQueue}
+                          onToggleFavorite={toggleFavorite}
+                          onOpenAddToPlaylist={(songItem) => {
+                            setSelectedSongForPlaylist(songItem);
+                            setIsPlaylistModalOpen(true);
+                          }}
+                          onDownload={handleDownload}
+                          isDownloaded={true}
+                          isDownloading={downloadingId === song.id}
+                          isFavorite={!!favorites[song.id]}
+                          currentTrack={currentTrack}
+                          isPlaying={isPlaying}
+                          isResolvingAudio={isResolvingAudio}
+                          upgradeImg={upgradeImg}
+                          formatSeconds={formatSeconds}
+                        />
+                        {song.downloadedAt && (
+                          <div className="absolute top-1 right-14 hidden sm:flex items-center gap-1 text-[9px] text-slate-600">
+                            <CheckCircle2 className="w-2.5 h-2.5 text-cyan-500" />
+                            {new Date(song.downloadedAt).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                 </div>
               )}
             </div>
@@ -1641,6 +1897,9 @@ export default function App() {
                           setSelectedSongForPlaylist(songItem);
                           setIsPlaylistModalOpen(true);
                         }}
+                        onDownload={handleDownload}
+                        isDownloaded={!!downloads[song.id]}
+                        isDownloading={downloadingId === song.id}
                         isFavorite={true}
                         currentTrack={currentTrack}
                         isPlaying={isPlaying}

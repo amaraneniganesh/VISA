@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, Heart, Plus, Loader2, Music2, ListMusic, MoreVertical } from 'lucide-react';
+import { Play, Pause, Heart, Plus, Loader2, Music2, ListMusic, MoreVertical, Download, CheckCircle2 } from 'lucide-react';
 import { decodeHTMLEntities, formatPlayCount } from '../utils/formatters';
 
 export default function TrackRow({
@@ -9,6 +9,9 @@ export default function TrackRow({
   onAddToQueue,
   onOpenAddToPlaylist,
   onToggleFavorite,
+  onDownload,
+  isDownloaded,
+  isDownloading,
   isFavorite,
   currentTrack,
   isPlaying,
@@ -142,6 +145,31 @@ export default function TrackRow({
           </button>
         )}
 
+        {/* Desktop Download Button */}
+        {onDownload && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDownload(song);
+            }}
+            className={`p-1.5 rounded-xl transition hidden md:block ${
+              isDownloaded
+                ? 'text-cyan-400 bg-cyan-500/10'
+                : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-800'
+            }`}
+            title={isDownloaded ? 'Already downloaded' : 'Download song'}
+            disabled={isDownloading}
+          >
+            {isDownloading ? (
+              <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+            ) : isDownloaded ? (
+              <CheckCircle2 className="w-4 h-4" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+          </button>
+        )}
+
         {/* Desktop Add to Playlist Button */}
         {onOpenAddToPlaylist && (
           <button
@@ -222,6 +250,29 @@ export default function TrackRow({
                 >
                   <Plus className="w-4 h-4 text-cyan-400" />
                   <span>Add to Queue</span>
+                </button>
+              )}
+              {onDownload && (
+                <button
+                  onClick={() => {
+                    onDownload(song);
+                    setShowMobileMenu(false);
+                  }}
+                  disabled={isDownloading}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition ${
+                    isDownloaded
+                      ? 'text-cyan-400 hover:bg-slate-800'
+                      : 'text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  {isDownloading ? (
+                    <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
+                  ) : isDownloaded ? (
+                    <CheckCircle2 className="w-4 h-4 text-cyan-400" />
+                  ) : (
+                    <Download className="w-4 h-4 text-cyan-400" />
+                  )}
+                  <span>{isDownloaded ? 'Downloaded' : 'Download Song'}</span>
                 </button>
               )}
             </div>

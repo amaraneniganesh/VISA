@@ -127,8 +127,14 @@ export default function ExpandedPlayer({
         );
         const durParam = encodeURIComponent(duration || currentTrack.more_info?.duration || '');
 
-        const apiHost = window.location.origin.includes('localhost')
-          ? 'http://localhost:5000/api'
+        const isNativeCapacitor = Boolean(
+          window.Capacitor?.isNativePlatform?.() ||
+          window.location.protocol === 'capacitor:' ||
+          window.Capacitor?.isPluginAvailable?.('CapacitorHttp')
+        );
+
+        const apiHost = (window.location.hostname === 'localhost' && window.location.port === '5173' && !isNativeCapacitor)
+          ? 'https://visa-server-7qzv.onrender.com/api'
           : 'https://visa-server-7qzv.onrender.com/api';
 
         const res = await fetch(

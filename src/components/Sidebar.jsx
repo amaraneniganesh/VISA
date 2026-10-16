@@ -19,7 +19,8 @@ import {
   ChevronRight,
   Clock,
   ShieldAlert,
-  Music2
+  Music2,
+  Download
 } from 'lucide-react';
 import { decodeHTMLEntities, upgradeImg } from '../utils/formatters';
 
@@ -50,6 +51,7 @@ export default function Sidebar({
     { id: 'search', label: 'Search & Genres', icon: Search },
     { id: 'library', label: 'Liked Songs', icon: Heart, badge: likedSongsCount },
     { id: 'playlists', label: 'My Playlists', icon: ListMusic, badge: userPlaylistsCount },
+    { id: 'downloads', label: 'My Downloads', icon: Download },
     { id: 'history', label: 'Recently Played', icon: Clock }
   ];
 

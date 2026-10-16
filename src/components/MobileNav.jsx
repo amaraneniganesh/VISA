@@ -11,7 +11,8 @@ import {
   X,
   ShieldAlert,
   Disc3,
-  ChevronRight
+  ChevronRight,
+  Download
 } from 'lucide-react';
 
 export default function MobileNav({
@@ -31,14 +32,15 @@ export default function MobileNav({
     { id: 'search', label: 'Search & Genres', icon: Search },
     { id: 'library', label: 'Liked Songs', icon: Heart, badge: likedSongsCount },
     { id: 'playlists', label: 'My Playlists', icon: ListMusic, badge: userPlaylistsCount },
+    { id: 'downloads', label: 'My Downloads', icon: Download },
     { id: 'history', label: 'Recently Played', icon: Clock }
   ];
 
   const primaryItems = [
     { id: 'home', label: 'Home', icon: Compass },
-    { id: 'years', label: 'Top Year', icon: Calendar },
     { id: 'search', label: 'Search', icon: Search },
     { id: 'library', label: 'Liked', icon: Heart, badge: likedSongsCount },
+    { id: 'downloads', label: 'Downloads', icon: Download },
     { id: 'playlists', label: 'Playlists', icon: ListMusic, badge: userPlaylistsCount }
   ];
 
@@ -179,7 +181,7 @@ export default function MobileNav({
           <button
             onClick={() => setIsMenuOpen(true)}
             className={`flex flex-col items-center justify-center gap-1 py-1 px-2.5 rounded-2xl transition-all duration-200 relative group active:scale-95 ${
-              isMenuOpen || ['spotlight', 'history', 'artists'].includes(activeTab)
+              isMenuOpen || ['spotlight', 'history', 'artists', 'years'].includes(activeTab)
                 ? 'text-emerald-400 font-extrabold bg-gradient-to-b from-emerald-500/20 to-emerald-500/5 border border-emerald-500/30 shadow-lg shadow-emerald-500/10'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
