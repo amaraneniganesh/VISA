@@ -130,6 +130,8 @@ export default function ExpandedPlayer({
           currentTrack.subtitle || currentTrack.artist || currentTrack.more_info?.music || ''
         );
         const durParam = encodeURIComponent(duration || currentTrack.more_info?.duration || '');
+        const songLanguage = currentTrack.language || currentTrack.more_info?.language || '';
+        const langParam = encodeURIComponent(songLanguage);
 
         const isNativeCapacitor = Boolean(
           window.Capacitor?.isNativePlatform?.() ||
@@ -142,7 +144,7 @@ export default function ExpandedPlayer({
           : 'https://visa-server-7qzv.onrender.com/api';
 
         const res = await fetch(
-          `${apiHost}/lyrics?lyrics_id=${lyricsId}&title=${titleParam}&artist=${artistParam}&duration=${durParam}`
+          `${apiHost}/lyrics?lyrics_id=${lyricsId}&title=${titleParam}&artist=${artistParam}&duration=${durParam}&song_language=${langParam}&language=${langParam}`
         );
         const data = await res.json();
         if (!isMounted) return;
@@ -639,16 +641,23 @@ export default function ExpandedPlayer({
                     <div className="flex items-center gap-2">
                       <p className="truncate text-xs font-bold text-emerald-400">{artist}</p>
                       {parsedLyrics.length > 0 && (
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black shrink-0 ${
-                            hasLrcExact
-                              ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300'
-                              : 'border-cyan-500/40 bg-cyan-500/20 text-cyan-300'
-                          }`}
-                        >
-                          <Sparkles className="h-2.5 w-2.5" />
-                          {hasLrcExact ? 'LRC Synced' : 'Auto Synced'}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {(lyricsData?.language || language) && (
+                            <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[9px] font-extrabold uppercase text-slate-300">
+                              {lyricsData?.language || language}
+                            </span>
+                          )}
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black shrink-0 ${
+                              hasLrcExact
+                                ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300'
+                                : 'border-cyan-500/40 bg-cyan-500/20 text-cyan-300'
+                            }`}
+                          >
+                            <Sparkles className="h-2.5 w-2.5" />
+                            {hasLrcExact ? 'LRC Synced' : 'Auto Synced'}
+                          </span>
+                        </div>
                       )}
                     </div>
                   </div>
