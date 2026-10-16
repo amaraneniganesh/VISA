@@ -22,7 +22,9 @@ import {
   Laptop,
   Headphones,
   Speaker,
-  Mic2
+  Mic2,
+  Download,
+  Check
 } from 'lucide-react';
 import AudioVisualizer from './AudioVisualizer';
 import { decodeHTMLEntities } from '../utils/formatters';
@@ -63,10 +65,16 @@ export default function PlayerBar({
   upgradeImg,
   audioRef,
   onOpenDevicePicker,
-  activeDevice
+  activeDevice,
+  onDownload,
+  downloads = {},
+  downloadingId
 }) {
   const [isClosed, setIsClosed] = useState(false);
   const [showMobileVolume, setShowMobileVolume] = useState(false);
+
+  const isDownloadingCurrent = downloadingId === currentTrack?.id;
+  const isCurrentDownloaded = Boolean(downloads[currentTrack?.id]);
 
   const nextTrack = queue && queueIndex >= 0 && queueIndex < queue.length - 1 ? queue[queueIndex + 1] : null;
   const progressPercent = duration > 0 ? Math.min(Math.max((currentTime / duration) * 100, 0), 100) : 0;
@@ -294,6 +302,28 @@ export default function PlayerBar({
               <SkipForward className="w-4 h-4" />
             </button>
 
+            {/* Mobile Download Song Button */}
+            {onDownload && (
+              <button
+                onClick={() => onDownload(currentTrack, bitrate)}
+                disabled={isDownloadingCurrent}
+                className={`p-2 rounded-xl transition ${
+                  isCurrentDownloaded
+                    ? 'text-cyan-400 bg-cyan-500/10'
+                    : 'text-slate-400 hover:text-cyan-400 hover:bg-slate-900 active:scale-95'
+                }`}
+                title={isCurrentDownloaded ? 'Downloaded (Tap to re-download)' : `Download "${decodeHTMLEntities(currentTrack.title)}"`}
+              >
+                {isDownloadingCurrent ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                ) : isCurrentDownloaded ? (
+                  <Check className="w-4 h-4 text-cyan-400" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+              </button>
+            )}
+
             {/* View Lyrics Button */}
             <button
               onClick={() => onExpandStudio && onExpandStudio('lyrics')}
@@ -367,6 +397,32 @@ export default function PlayerBar({
                 title="Add to Playlist"
               >
                 <ListMusic className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Desktop Download Quick Button */}
+            {onDownload && (
+              <button
+                onClick={() => onDownload(currentTrack, bitrate)}
+                disabled={isDownloadingCurrent}
+                className={`p-1.5 rounded-lg transition shrink-0 ${
+                  isCurrentDownloaded
+                    ? 'text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20'
+                    : 'text-slate-400 hover:text-cyan-400 hover:bg-slate-900'
+                }`}
+                title={
+                  isCurrentDownloaded
+                    ? `"${decodeHTMLEntities(currentTrack.title)}" downloaded (Click to re-download)`
+                    : `Download "${decodeHTMLEntities(currentTrack.title)}" (${bitrate}kbps MP3)`
+                }
+              >
+                {isDownloadingCurrent ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                ) : isCurrentDownloaded ? (
+                  <Check className="w-4 h-4 text-cyan-400" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
               </button>
             )}
           </div>
@@ -509,6 +565,35 @@ export default function PlayerBar({
                 {activeDevice?.name || 'PC Speakers'}
               </span>
             </button>
+
+            {/* Download Button in Right Toolbar */}
+            {onDownload && (
+              <button
+                onClick={() => onDownload(currentTrack, bitrate)}
+                disabled={isDownloadingCurrent}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition shrink-0 ${
+                  isCurrentDownloaded
+                    ? 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300 shadow-sm'
+                    : 'text-slate-400 border-slate-800 bg-slate-900/60 hover:text-cyan-400 hover:border-slate-700'
+                }`}
+                title={
+                  isCurrentDownloaded
+                    ? `"${decodeHTMLEntities(currentTrack.title)}" downloaded (Click to re-download)`
+                    : `Download "${decodeHTMLEntities(currentTrack.title)}" (${bitrate}kbps)`
+                }
+              >
+                {isDownloadingCurrent ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                ) : isCurrentDownloaded ? (
+                  <Check className="w-4 h-4 text-cyan-400" />
+                ) : (
+                  <Download className="w-4 h-4 text-cyan-400" />
+                )}
+                <span className="text-xs font-bold text-slate-200 hidden xl:inline">
+                  {isDownloadingCurrent ? 'Downloading…' : isCurrentDownloaded ? 'Downloaded' : 'Download'}
+                </span>
+              </button>
+            )}
 
             {/* View Lyrics Button */}
             <button

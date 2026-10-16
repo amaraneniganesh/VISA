@@ -800,42 +800,121 @@ export default function App() {
     }
   };
 
-  // Download a song — fetches stream URL via proxy then triggers browser download
-  const handleDownload = async (song) => {
-    if (!song || !song.id) return;
-    if (downloadingId === song.id) return;
-    const alreadyDownloaded = !!downloads[song.id];
-    if (alreadyDownloaded) {
-      showToast(`"${decodeHTMLEntities(song.title)}" is already in your downloads.`);
-      return;
-    }
-    setDownloadingId(song.id);
+  // Download a song — fetches audio stream and triggers browser download
+  const handleDownload = async (song = currentTrack, chosenBitrate = bitrate || '320') => {
+    const targetSong = song || currentTrack;
+    if (!targetSong || !targetSong.id) return;
+    if (downloadingId === targetSong.id) return;
+
+    setDownloadingId(targetSong.id);
+    showToast(`Preparing download for "${decodeHTMLEntities(targetSong.title)}" (${chosenBitrate}k)...`);
+
     try {
-      const res = await fetch(`${API_BASE}/stream?id=${encodeURIComponent(song.id)}&bitrate=${bitrate || '160'}`);
-      if (!res.ok) throw new Error('Stream unavailable');
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const fileName = `${decodeHTMLEntities(song.title || 'song').replace(/[^a-z0-9 ]/gi, '_')}.mp3`;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      // Save metadata so user keeps record even if local files are lost
+      let audioStreamUrl = null;
+
+      // 1. If currently playing song matches and bitrate matches, reuse active audio element stream
+      if (currentTrack?.id === targetSong.id && audioRef.current?.src && chosenBitrate === bitrate) {
+        audioStreamUrl = audioRef.current.src;
+      }
+
+      // 2. Otherwise resolve stream via /song-stream
+      if (!audioStreamUrl) {
+        let encryptedUrl = targetSong.more_info?.encrypted_media_url;
+        let songPid = targetSong.id;
+        let songToken = targetSong.token;
+
+        if (!encryptedUrl) {
+          try {
+            const queryParam = songPid ? `pids=${encodeURIComponent(songPid)}` : `token=${encodeURIComponent(songToken || '')}&type=song`;
+            const detailRes = await fetch(`${API_BASE}/details?${queryParam}&languages=${encodeURIComponent(languagesQuery)}`);
+            const fullSong = await detailRes.json();
+            if (fullSong?.more_info?.encrypted_media_url) {
+              encryptedUrl = fullSong.more_info.encrypted_media_url;
+              songPid = fullSong.id || songPid;
+            }
+          } catch {}
+        }
+
+        const params = new URLSearchParams({
+          encryptedUrl: encryptedUrl ? encodeURIComponent(encryptedUrl) : '',
+          pid: songPid || '',
+          id: songPid || targetSong.id || '',
+          token: songToken || '',
+          bitrate: chosenBitrate,
+          languages: languagesQuery
+        });
+
+        const res = await fetch(`${API_BASE}/song-stream?${params.toString()}`);
+        const data = await res.json();
+        if (data?.stream_url) {
+          audioStreamUrl = data.stream_url;
+        }
+      }
+
+      if (!audioStreamUrl) {
+        throw new Error('Audio stream unavailable');
+      }
+
+      const cleanTitle = decodeHTMLEntities(targetSong.title || 'Track')
+        .replace(/[\\/:*?"<>|]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const cleanArtist = decodeHTMLEntities(targetSong.subtitle || targetSong.more_info?.music || '')
+        .replace(/[\\/:*?"<>|]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const fileName = cleanArtist ? `${cleanTitle} - ${cleanArtist}.mp3` : `${cleanTitle}.mp3`;
+
+      // 3. Attempt direct client-side blob download (fastest, direct CDN stream)
+      let downloaded = false;
+      try {
+        const audioFetch = await fetch(audioStreamUrl);
+        if (audioFetch.ok) {
+          const blob = await audioFetch.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = blobUrl;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            URL.revokeObjectURL(blobUrl);
+            a.remove();
+          }, 1500);
+          downloaded = true;
+        }
+      } catch (blobErr) {
+        console.warn('Direct blob fetch failed, falling back to backend download proxy:', blobErr);
+      }
+
+      // 4. Fallback to server-side download proxy
+      if (!downloaded) {
+        const downloadProxyUrl = `${API_BASE}/download?url=${encodeURIComponent(audioStreamUrl)}&title=${encodeURIComponent(cleanTitle)}&artist=${encodeURIComponent(cleanArtist)}`;
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = downloadProxyUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => a.remove(), 1500);
+      }
+
+      // 5. Save metadata to downloads collection
       setDownloads((prev) => ({
         ...prev,
-        [song.id]: {
-          ...song,
+        [targetSong.id]: {
+          ...targetSong,
           downloadedAt: new Date().toISOString(),
-          fileName
+          fileName,
+          bitrate: chosenBitrate
         }
       }));
-      showToast(`Downloaded: ${decodeHTMLEntities(song.title)}`);
+
+      showToast(`Downloaded: "${decodeHTMLEntities(targetSong.title)}"`);
     } catch (err) {
       console.error('Download failed:', err);
-      showToast('Download failed — try again.');
+      showToast('Download failed — please try again.');
     } finally {
       setDownloadingId(null);
     }
@@ -2302,6 +2381,9 @@ export default function App() {
           onOpenDevicePicker={() => setIsDevicePickerOpen(true)}
           activeDevice={activeDevice}
           initialTab={studioInitialTab}
+          onDownload={handleDownload}
+          downloads={downloads}
+          downloadingId={downloadingId}
         />
       )}
 
@@ -2344,6 +2426,9 @@ export default function App() {
         audioRef={audioRef}
         onOpenDevicePicker={() => setIsDevicePickerOpen(true)}
         activeDevice={activeDevice}
+        onDownload={handleDownload}
+        downloads={downloads}
+        downloadingId={downloadingId}
       />
 
       {/* Spotify-Style Connect Device Picker Modal */}

@@ -27,7 +27,8 @@ import {
   Globe,
   AlignLeft,
   RefreshCw,
-  Languages
+  Languages,
+  Download
 } from 'lucide-react';
 import AudioVisualizer from './AudioVisualizer';
 import { decodeHTMLEntities, formatPlayCount } from '../utils/formatters';
@@ -92,7 +93,10 @@ export default function ExpandedPlayer({
   audioRef,
   onOpenDevicePicker,
   activeDevice,
-  initialTab = 'studio'
+  initialTab = 'studio',
+  onDownload,
+  downloads = {},
+  downloadingId
 }) {
   const [visualizerMode, setVisualizerMode] = useState('radial');
   const [activeTab, setActiveTab] = useState(initialTab || 'studio');
@@ -348,6 +352,9 @@ export default function ExpandedPlayer({
   const explicit = currentTrack.explicit_content === '1' || currentTrack.more_info?.explicit_content === '1';
   const hasLrcExact = Boolean(lyricsData?.hasSynced);
 
+  const isDownloadingCurrent = downloadingId === currentTrack?.id;
+  const isCurrentDownloaded = Boolean(downloads[currentTrack?.id]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex h-[100dvh] flex-col overflow-hidden bg-[#06080e] text-slate-100 select-none animate-in fade-in duration-300"
@@ -557,6 +564,39 @@ export default function ExpandedPlayer({
                   </span>
                 )}
               </div>
+
+              {/* Studio Direct Download Button */}
+              {onDownload && (
+                <div className="pt-1.5 flex items-center justify-center">
+                  <button
+                    onClick={() => onDownload(currentTrack, bitrate)}
+                    disabled={isDownloadingCurrent}
+                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-bold transition-all active:scale-95 shadow-lg ${
+                      isCurrentDownloaded
+                        ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300 shadow-cyan-500/20'
+                        : 'border-cyan-500/40 bg-slate-900/90 text-cyan-300 hover:bg-cyan-500/20 hover:border-cyan-400'
+                    }`}
+                    title={isCurrentDownloaded ? 'Downloaded (Tap to download again)' : `Download "${title}" (${bitrate}k MP3)`}
+                  >
+                    {isDownloadingCurrent ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-400" />
+                        <span>Downloading Track ({bitrate}k)…</span>
+                      </>
+                    ) : isCurrentDownloaded ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-cyan-400" />
+                        <span>Downloaded ({bitrate}k MP3)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-3.5 w-3.5 text-cyan-400" />
+                        <span>Download Track ({bitrate}k MP3)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
 
               {/* Floating Live Synced Lyric Preview Pill */}
               {parsedLyrics.length > 0 && activeLineIndex >= 0 && parsedLyrics[activeLineIndex] && (
@@ -986,6 +1026,29 @@ export default function ExpandedPlayer({
                   className={`${iconBtn} h-10 w-10 border border-white/15 bg-white/10 text-slate-300 hover:text-emerald-400 hover:bg-white/20`}
                 >
                   <ListPlus className="h-[18px] w-[18px]" />
+                </button>
+              )}
+
+              {/* Download Button in Footer */}
+              {onDownload && (
+                <button
+                  onClick={() => onDownload(currentTrack, bitrate)}
+                  disabled={isDownloadingCurrent}
+                  aria-label="Download track"
+                  title={isCurrentDownloaded ? `"${title}" downloaded (Click to re-download)` : `Download "${title}" (${bitrate}kbps MP3)`}
+                  className={`${iconBtn} h-10 w-10 border transition-all ${
+                    isCurrentDownloaded
+                      ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-400 shadow-md shadow-cyan-500/20'
+                      : 'border-white/15 bg-white/10 text-slate-300 hover:text-cyan-400 hover:bg-white/20'
+                  }`}
+                >
+                  {isDownloadingCurrent ? (
+                    <Loader2 className="h-[18px] w-[18px] animate-spin text-cyan-400" />
+                  ) : isCurrentDownloaded ? (
+                    <Check className="h-[18px] w-[18px] text-cyan-400" />
+                  ) : (
+                    <Download className="h-[18px] w-[18px]" />
+                  )}
                 </button>
               )}
 
