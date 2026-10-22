@@ -28,7 +28,8 @@ import {
   AlignLeft,
   RefreshCw,
   Languages,
-  Download
+  Download,
+  Info
 } from 'lucide-react';
 import AudioVisualizer from './AudioVisualizer';
 import { decodeHTMLEntities, formatPlayCount } from '../utils/formatters';
@@ -354,8 +355,14 @@ export default function ExpandedPlayer({
   const explicit = currentTrack.explicit_content === '1' || currentTrack.more_info?.explicit_content === '1';
   const hasLrcExact = Boolean(lyricsData?.hasSynced);
 
-  const isDownloadingCurrent = downloadingId === currentTrack?.id;
-  const isCurrentDownloaded = Boolean(downloads[currentTrack?.id]);
+  const isDownloadingCurrent =
+    downloadingId === currentTrack?.id ||
+    (currentTrack?.songId && downloadingId === currentTrack.songId);
+  const isCurrentDownloaded = Boolean(
+    downloads[currentTrack?.id] ||
+    (currentTrack?.songId && downloads[currentTrack.songId]) ||
+    (currentTrack?.fileName && downloads[`local_${currentTrack.fileName}`])
+  );
 
   return (
     <div
@@ -732,6 +739,17 @@ export default function ExpandedPlayer({
                   </div>
                 )}
               </div>
+
+              {/* Original-language fallback notice */}
+              {lyricsData?.isOriginalLanguageFallback && (
+                <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 mt-1">
+                  <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-400" />
+                  <p className="text-[11px] font-semibold leading-snug text-amber-300">
+                    Exact <span className="font-black uppercase">{language || lyricsData.language}</span> lyrics not found.
+                    Showing the original song lyrics — they may be in a different language.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Lyrics Body Content */}

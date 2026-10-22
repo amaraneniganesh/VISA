@@ -72,8 +72,14 @@ export default function PlayerBar({
 }) {
   const [isClosed, setIsClosed] = useState(false);
 
-  const isDownloadingCurrent = downloadingId === currentTrack?.id;
-  const isCurrentDownloaded = Boolean(downloads[currentTrack?.id]);
+  const isDownloadingCurrent =
+    downloadingId === currentTrack?.id ||
+    (currentTrack?.songId && downloadingId === currentTrack.songId);
+  const isCurrentDownloaded = Boolean(
+    downloads[currentTrack?.id] ||
+    (currentTrack?.songId && downloads[currentTrack.songId]) ||
+    (currentTrack?.fileName && downloads[`local_${currentTrack.fileName}`])
+  );
 
   const nextTrack = queue && queueIndex >= 0 && queueIndex < queue.length - 1 ? queue[queueIndex + 1] : null;
   const progressPercent = duration > 0 ? Math.min(Math.max((currentTime / duration) * 100, 0), 100) : 0;

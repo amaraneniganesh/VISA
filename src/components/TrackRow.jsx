@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, Heart, Plus, Loader2, Music2, ListMusic, MoreVertical, Download, CheckCircle2 } from 'lucide-react';
+import { Play, Pause, Heart, Plus, Loader2, Music2, ListMusic, MoreVertical, Download, CheckCircle2, Trash2 } from 'lucide-react';
 import { decodeHTMLEntities, formatPlayCount } from '../utils/formatters';
 
 export default function TrackRow({
@@ -10,6 +10,7 @@ export default function TrackRow({
   onOpenAddToPlaylist,
   onToggleFavorite,
   onDownload,
+  onDeleteDownload,
   isDownloaded,
   isDownloading,
   isFavorite,
@@ -39,7 +40,10 @@ export default function TrackRow({
       document.removeEventListener('touchstart', handleClickOutside);
     };
   }, [showMobileMenu]);
-  const isCurrent = currentTrack?.id === song.id;
+  const isCurrent = Boolean(
+    (currentTrack?.id && (currentTrack.id === song.id || currentTrack.id === song.songId)) ||
+    (currentTrack?.songId && (currentTrack.songId === song.id || currentTrack.songId === song.songId))
+  );
   const isBusy = isResolvingAudio && isCurrent;
 
   const playCountFormatted = formatPlayCount(song.play_count || song.more_info?.play_count);
@@ -198,6 +202,20 @@ export default function TrackRow({
           </button>
         )}
 
+        {/* Desktop Delete Download Button */}
+        {onDeleteDownload && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteDownload(song);
+            }}
+            className="p-1.5 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition hidden md:block"
+            title="Delete download"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+
         {/* Mobile 3-Dots Action Menu Trigger (< md) */}
         <div ref={menuRef} className="relative md:hidden">
           <button
@@ -273,6 +291,18 @@ export default function TrackRow({
                     <Download className="w-4 h-4 text-cyan-400" />
                   )}
                   <span>{isDownloaded ? 'Downloaded' : 'Download Song'}</span>
+                </button>
+              )}
+              {onDeleteDownload && (
+                <button
+                  onClick={() => {
+                    onDeleteDownload(song);
+                    setShowMobileMenu(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-400 hover:bg-slate-800 transition"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-400" />
+                  <span>Remove Download</span>
                 </button>
               )}
             </div>

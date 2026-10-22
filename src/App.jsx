@@ -19,10 +19,22 @@ import LimitReachedModal from './components/LimitReachedModal';
 import UserProfileModal from './components/UserProfileModal';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
 import AdminPortalModal from './components/AdminPortalModal';
+import LocalFolderModal from './components/LocalFolderModal';
 
 import { SectionSkeleton, GridSkeleton } from './components/SkeletonLoader';
 import ToastNotification from './components/ToastNotification';
 import { decodeHTMLEntities, formatSeconds, upgradeImg } from './utils/formatters';
+import {
+  saveOfflineSong,
+  getOfflineAudio,
+  deleteOfflineSong,
+  getAllOfflineTracks,
+  clearAllOfflineTracks,
+  getSavedFolderHandle,
+  verifyFolderPermission,
+  scanFolderForAudioFiles,
+  isFolderPickerSupported
+} from './utils/offlineStorage';
 
 import {
   Calendar,
@@ -41,10 +53,16 @@ import {
   Disc,
   Radio,
   Download,
-  CheckCircle2
+  CheckCircle2,
+  Folder,
+  FolderCheck,
+  FolderPlus,
+  HardDrive,
+  WifiOff,
+  RefreshCw
 } from 'lucide-react';
 
-const API_BASE = ' https://visa-server-7qzv.onrender.com/api';
+const API_BASE = (import.meta.env.VITE_API_BASE || 'https://visa-server-7qzv.onrender.com/api').trim();
 const MusicNotification = registerPlugin('MusicNotification');
 
 const ALL_LANGUAGES = [
@@ -441,6 +459,72 @@ export default function App() {
   });
   const [downloadingId, setDownloadingId] = useState(null);
 
+  // Offline Mode & Local PC Folder State
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [localFolderName, setLocalFolderName] = useState(() => {
+    try {
+      return localStorage.getItem('visa_offline_folder_name') || null;
+    } catch {
+      return null;
+    }
+  });
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [folderPromptOpen, setFolderPromptOpen] = useState(false);
+  const [pendingDownloadSong, setPendingDownloadSong] = useState(null);
+  const currentBlobUrlRef = useRef(null);
+
+  // Online / Offline Network Monitor
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      showToast('Internet connection restored — Back online 🌐');
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      showToast('Offline Mode active — Downloaded songs available ⚡');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Sync Offline Tracks & Folder Handle from IndexedDB on startup
+  useEffect(() => {
+    const syncOfflineData = async () => {
+      try {
+        const dbTracks = await getAllOfflineTracks();
+        if (dbTracks && Object.keys(dbTracks).length > 0) {
+          setDownloads((prev) => ({
+            ...prev,
+            ...dbTracks
+          }));
+        }
+        const dirHandle = await getSavedFolderHandle();
+        if (dirHandle) {
+          setLocalFolderName(dirHandle.name);
+        }
+      } catch (err) {
+        console.warn('Initial offline data sync error:', err);
+      }
+    };
+    syncOfflineData();
+  }, []);
+
+  // Cleanup active blob URLs when unmounting
+  useEffect(() => {
+    return () => {
+      if (currentBlobUrlRef.current) {
+        URL.revokeObjectURL(currentBlobUrlRef.current);
+        currentBlobUrlRef.current = null;
+      }
+    };
+  }, []);
+
   // Persist downloads whenever they change
   React.useEffect(() => {
     try {
@@ -800,37 +884,54 @@ export default function App() {
     }
   };
 
-  // Download a song — fetches audio stream and triggers browser download
-  const handleDownload = async (song = currentTrack, chosenBitrate = bitrate || '320') => {
+  // Core Song Downloader — saves blob locally to IndexedDB & selected PC folder
+  const executeDownload = async (song = currentTrack, chosenBitrate = bitrate || '320') => {
     const targetSong = song || currentTrack;
-    if (!targetSong || !targetSong.id) return;
-    if (downloadingId === targetSong.id) return;
+    if (!targetSong || (!targetSong.id && !targetSong.songId)) return;
+    if (downloadingId === targetSong.id || downloadingId === targetSong.songId) return;
 
-    setDownloadingId(targetSong.id);
-    showToast(`Preparing download for "${decodeHTMLEntities(targetSong.title)}" (${chosenBitrate}k)...`);
+    const isMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+    const resolvedPid = (targetSong.songId || (!isMongoId(targetSong.id) ? targetSong.id : null) || '').toString();
+    let songToken = targetSong.token || '';
+    if (!songToken && (targetSong.perma_url || targetSong.url)) {
+      const cleanUrl = (targetSong.perma_url || targetSong.url).split('?')[0].replace(/\/$/, '');
+      const parts = cleanUrl.split('/');
+      songToken = parts[parts.length - 1] || '';
+    }
+
+    setDownloadingId(targetSong.id || resolvedPid);
+    showToast(`Downloading "${decodeHTMLEntities(targetSong.title)}" (${chosenBitrate}k)...`);
 
     try {
       let audioStreamUrl = null;
 
       // 1. If currently playing song matches and bitrate matches, reuse active audio element stream
-      if (currentTrack?.id === targetSong.id && audioRef.current?.src && chosenBitrate === bitrate) {
+      if (
+        (currentTrack?.id === targetSong.id || (resolvedPid && currentTrack?.id === resolvedPid)) &&
+        audioRef.current?.src &&
+        chosenBitrate === bitrate &&
+        !audioRef.current.src.startsWith('blob:')
+      ) {
         audioStreamUrl = audioRef.current.src;
       }
 
       // 2. Otherwise resolve stream via /song-stream
       if (!audioStreamUrl) {
         let encryptedUrl = targetSong.more_info?.encrypted_media_url;
-        let songPid = targetSong.id;
-        let songToken = targetSong.token;
+        let songPid = resolvedPid;
 
         if (!encryptedUrl) {
           try {
-            const queryParam = songPid ? `pids=${encodeURIComponent(songPid)}` : `token=${encodeURIComponent(songToken || '')}&type=song`;
-            const detailRes = await fetch(`${API_BASE}/details?${queryParam}&languages=${encodeURIComponent(languagesQuery)}`);
-            const fullSong = await detailRes.json();
-            if (fullSong?.more_info?.encrypted_media_url) {
-              encryptedUrl = fullSong.more_info.encrypted_media_url;
-              songPid = fullSong.id || songPid;
+            const queryParam = songPid
+              ? `pids=${encodeURIComponent(songPid)}`
+              : (songToken ? `token=${encodeURIComponent(songToken)}&type=song` : '');
+            if (queryParam) {
+              const detailRes = await fetch(`${API_BASE}/details?${queryParam}&languages=${encodeURIComponent(languagesQuery)}`);
+              const fullSong = await detailRes.json();
+              if (fullSong?.more_info?.encrypted_media_url) {
+                encryptedUrl = fullSong.more_info.encrypted_media_url;
+                songPid = fullSong.id || songPid;
+              }
             }
           } catch {}
         }
@@ -838,8 +939,9 @@ export default function App() {
         const params = new URLSearchParams({
           encryptedUrl: encryptedUrl ? encodeURIComponent(encryptedUrl) : '',
           pid: songPid || '',
-          id: songPid || targetSong.id || '',
+          id: songPid || '',
           token: songToken || '',
+          perma_url: targetSong.perma_url || targetSong.url || '',
           bitrate: chosenBitrate,
           languages: languagesQuery
         });
@@ -865,58 +967,156 @@ export default function App() {
         .trim();
       const fileName = cleanArtist ? `${cleanTitle} - ${cleanArtist}.mp3` : `${cleanTitle}.mp3`;
 
-      // 3. Attempt direct client-side blob download (fastest, direct CDN stream)
-      let downloaded = false;
+      // 3. Fetch the actual audio Blob (try direct CDN first, fallback to backend download proxy)
+      let audioBlob = null;
       try {
         const audioFetch = await fetch(audioStreamUrl);
         if (audioFetch.ok) {
-          const blob = await audioFetch.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.style.display = 'none';
-          a.href = blobUrl;
-          a.download = fileName;
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(() => {
-            URL.revokeObjectURL(blobUrl);
-            a.remove();
-          }, 1500);
-          downloaded = true;
+          audioBlob = await audioFetch.blob();
         }
       } catch (blobErr) {
-        console.warn('Direct blob fetch failed, falling back to backend download proxy:', blobErr);
+        console.warn('Direct stream fetch failed, trying proxy download endpoint:', blobErr);
       }
 
-      // 4. Fallback to server-side download proxy
-      if (!downloaded) {
-        const downloadProxyUrl = `${API_BASE}/download?url=${encodeURIComponent(audioStreamUrl)}&title=${encodeURIComponent(cleanTitle)}&artist=${encodeURIComponent(cleanArtist)}`;
+      if (!audioBlob) {
+        try {
+          const downloadProxyUrl = `${API_BASE}/download?url=${encodeURIComponent(audioStreamUrl)}&title=${encodeURIComponent(cleanTitle)}&artist=${encodeURIComponent(cleanArtist)}&token=${encodeURIComponent(songToken)}&id=${encodeURIComponent(resolvedPid || '')}`;
+          const proxyRes = await fetch(downloadProxyUrl);
+          if (proxyRes.ok) {
+            audioBlob = await proxyRes.blob();
+          }
+        } catch (proxyErr) {
+          console.warn('Proxy download endpoint failed:', proxyErr);
+        }
+      }
+
+      if (!audioBlob) {
+        throw new Error('Failed to retrieve audio data for offline saving');
+      }
+
+      // 4. Save to IndexedDB & User's selected PC folder
+      const songToSave = {
+        ...targetSong,
+        id: resolvedPid || targetSong.id,
+        songId: resolvedPid || targetSong.songId || targetSong.id
+      };
+      const saveResult = await saveOfflineSong(songToSave, audioBlob, chosenBitrate, fileName);
+
+      // 5. If folder wasn't directly written, trigger browser file download so user also gets the physical MP3 in Downloads
+      if (!saveResult.savedToFolder) {
+        const blobUrl = URL.createObjectURL(audioBlob);
         const a = document.createElement('a');
         a.style.display = 'none';
-        a.href = downloadProxyUrl;
+        a.href = blobUrl;
         a.download = fileName;
         document.body.appendChild(a);
         a.click();
-        setTimeout(() => a.remove(), 1500);
+        setTimeout(() => {
+          URL.revokeObjectURL(blobUrl);
+          a.remove();
+        }, 2000);
       }
 
-      // 5. Save metadata to downloads collection
-      setDownloads((prev) => ({
-        ...prev,
-        [targetSong.id]: {
-          ...targetSong,
-          downloadedAt: new Date().toISOString(),
-          fileName,
-          bitrate: chosenBitrate
-        }
-      }));
+      // 6. Update downloads state
+      const downloadItem = {
+        ...songToSave,
+        downloadedAt: new Date().toISOString(),
+        fileName,
+        bitrate: chosenBitrate,
+        fileSize: audioBlob.size,
+        isOfflineReady: true,
+        savedToFolder: Boolean(saveResult.savedToFolder)
+      };
 
-      showToast(`Downloaded: "${decodeHTMLEntities(targetSong.title)}"`);
+      setDownloads((prev) => {
+        const updated = {
+          ...prev,
+          [downloadItem.id]: downloadItem
+        };
+        if (targetSong.id) updated[targetSong.id] = downloadItem;
+        if (targetSong.songId) updated[targetSong.songId] = downloadItem;
+        return updated;
+      });
+
+      showToast(
+        saveResult.savedToFolder
+          ? `Saved to "${localFolderName}": "${cleanTitle}" ⚡`
+          : `Downloaded & ready offline: "${cleanTitle}" ⚡`
+      );
     } catch (err) {
       console.error('Download failed:', err);
-      showToast('Download failed — please try again.');
+      showToast('Download failed — please check your internet connection.');
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  // Download Trigger — asks user to select a folder if not chosen yet
+  const handleDownload = async (song = currentTrack, chosenBitrate = bitrate || '320') => {
+    const targetSong = song || currentTrack;
+    if (!targetSong || !targetSong.id) return;
+    if (downloadingId === targetSong.id) return;
+
+    // If no folder chosen yet and no preference saved, prompt user
+    const hasFolder = Boolean(localFolderName);
+    const hasPref = localStorage.getItem('visa_folder_choice_preference');
+    if (!hasFolder && !hasPref && isFolderPickerSupported()) {
+      setPendingDownloadSong({ song: targetSong, bitrate: chosenBitrate });
+      setFolderPromptOpen(true);
+      return;
+    }
+
+    await executeDownload(targetSong, chosenBitrate);
+  };
+
+  // Delete a downloaded song from offline storage & list
+  const handleDeleteDownload = async (song) => {
+    if (!song || !song.id) return;
+    try {
+      await deleteOfflineSong(song.id, song.fileName);
+      setDownloads((prev) => {
+        const copy = { ...prev };
+        delete copy[song.id];
+        return copy;
+      });
+      showToast(`Removed "${decodeHTMLEntities(song.title || 'Track')}" from downloads`);
+    } catch (err) {
+      console.error('Failed to remove download:', err);
+      showToast('Failed to remove download');
+    }
+  };
+
+  // Scan & Fetch songs from connected local folder
+  const handleScanLocalFolder = async () => {
+    try {
+      showToast('Scanning local folder for audio files…');
+      const dirHandle = await getSavedFolderHandle();
+      if (!dirHandle) {
+        setIsFolderModalOpen(true);
+        return;
+      }
+      const hasPerm = await verifyFolderPermission(dirHandle, true, false);
+      if (!hasPerm) {
+        showToast('Please grant permission to access the local folder.');
+        setIsFolderModalOpen(true);
+        return;
+      }
+      const scannedTracks = await scanFolderForAudioFiles(dirHandle);
+      if (scannedTracks && scannedTracks.length > 0) {
+        setDownloads((prev) => {
+          const updated = { ...prev };
+          for (const s of scannedTracks) {
+            updated[s.id] = s;
+          }
+          return updated;
+        });
+        showToast(`Fetched ${scannedTracks.length} song(s) from "${dirHandle.name}"! ⚡`);
+      } else {
+        showToast('No audio files found in the folder.');
+      }
+    } catch (err) {
+      console.error('Folder scan error:', err);
+      showToast('Error scanning folder. Check folder permissions.');
     }
   };
 
@@ -1045,45 +1245,147 @@ export default function App() {
     }
   };
 
-  // Play Audio Track via Direct Stream Proxy
+  // Play Audio Track via Local Offline Storage or Direct Stream Proxy
   const handlePlayFullSong = async (song, chosenBitrate = bitrate) => {
-    // Check Guest Limit (15 min = 900 seconds)
-    if (!user && guestTimeSpent >= 900) {
+    if (!song) return;
+
+    const isMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+    const resolvedPid = (song.songId || (!isMongoId(song.id) ? song.id : null) || '').toString();
+    let resolvedToken = song.token || '';
+    if (!resolvedToken && (song.perma_url || song.url)) {
+      const cleanUrl = (song.perma_url || song.url).split('?')[0].replace(/\/$/, '');
+      const parts = cleanUrl.split('/');
+      resolvedToken = parts[parts.length - 1] || '';
+    }
+
+    const isDownloadedSong = Boolean(
+      downloads[song.id] ||
+      (song.songId && downloads[song.songId]) ||
+      (resolvedPid && downloads[resolvedPid]) ||
+      (song.fileName && downloads[`local_${song.fileName}`])
+    );
+
+    // Check Guest Limit (15 min = 900 seconds) — never block user's own downloaded songs
+    if (!user && guestTimeSpent >= 900 && !isDownloadedSong) {
       setIsLimitModalOpen(true);
       showToast('15-minute daily guest playback limit reached! Please Log In or Register.');
       return;
     }
 
-    if (currentTrack?.id === song.id && chosenBitrate === bitrate) {
+    const isSameTrack = currentTrack?.id === song.id || (resolvedPid && currentTrack?.id === resolvedPid);
+    if (isSameTrack && chosenBitrate === bitrate) {
       togglePlayPause();
       return;
     }
 
-    const previousTime = currentTrack?.id === song.id ? audioRef.current.currentTime : 0;
+    const previousTime = isSameTrack ? audioRef.current.currentTime : 0;
     setIsResolvingAudio(true);
 
+    // 0. Check Offline Storage / Local PC Folder FIRST (zero network, instant playback)
+    try {
+      const offlineResult = await getOfflineAudio(resolvedPid || song.id, song);
+      if (offlineResult && offlineResult.blob) {
+        if (currentBlobUrlRef.current) {
+          URL.revokeObjectURL(currentBlobUrlRef.current);
+          currentBlobUrlRef.current = null;
+        }
+        const offlineUrl = URL.createObjectURL(offlineResult.blob);
+        currentBlobUrlRef.current = offlineUrl;
+        audioRef.current.src = offlineUrl;
+        audioRef.current.currentTime = previousTime;
+        await audioRef.current.play();
+
+        const offlineSongDetails = {
+          ...song,
+          id: resolvedPid || song.id,
+          songId: resolvedPid || song.songId || song.id,
+          isOffline: true
+        };
+        setCurrentTrack(offlineSongDetails);
+        setIsPlaying(true);
+        addToQueueIfNotPresent(offlineSongDetails);
+
+        showToast(`Playing offline: "${decodeHTMLEntities(song.title || 'Track')}" ⚡`);
+        setIsResolvingAudio(false);
+
+        // Record history silently if online
+        if (token && isOnline) {
+          try {
+            await fetch(`${API_BASE}/history/listening`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+              },
+              body: JSON.stringify({ song: offlineSongDetails })
+            });
+            await fetch(`${API_BASE}/analytics/listen`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                song: offlineSongDetails,
+                durationListened: offlineSongDetails.duration || offlineSongDetails.more_info?.duration || 180
+              })
+            });
+          } catch {}
+        }
+        return;
+      }
+    } catch (offlineErr) {
+      console.warn('Offline playback retrieval attempted:', offlineErr);
+    }
+
+    // If device is offline and song was not found in offline storage:
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      showToast('You are offline. Only downloaded songs can be played offline.');
+      setIsResolvingAudio(false);
+      return;
+    }
+
+    // 1. Online Stream Resolution
     try {
       let encryptedUrl = song.more_info?.encrypted_media_url;
-      let songPid = song.id;
-      let songDetails = song;
+      let songPid = resolvedPid;
+      let songDetails = {
+        ...song,
+        id: resolvedPid || song.id,
+        songId: resolvedPid || song.songId || song.id,
+        token: resolvedToken
+      };
 
       if (!encryptedUrl) {
-        const queryParam = songPid ? `pids=${encodeURIComponent(songPid)}` : `token=${encodeURIComponent(song.token)}&type=song`;
-        const detailRes = await fetch(`${API_BASE}/details?${queryParam}&languages=${encodeURIComponent(languagesQuery)}`);
-        const fullSong = await detailRes.json();
+        const queryParam = songPid
+          ? `pids=${encodeURIComponent(songPid)}`
+          : (resolvedToken ? `token=${encodeURIComponent(resolvedToken)}&type=song` : '');
 
-        if (fullSong && fullSong.more_info) {
-          encryptedUrl = fullSong.more_info.encrypted_media_url;
-          songPid = fullSong.id || songPid;
-          songDetails = { ...song, ...fullSong };
+        if (queryParam) {
+          try {
+            const detailRes = await fetch(`${API_BASE}/details?${queryParam}&languages=${encodeURIComponent(languagesQuery)}`);
+            const fullSong = await detailRes.json();
+
+            if (fullSong && fullSong.more_info) {
+              encryptedUrl = fullSong.more_info.encrypted_media_url;
+              songPid = fullSong.id || songPid;
+              songDetails = {
+                ...song,
+                ...fullSong,
+                id: songPid || song.id,
+                songId: songPid || song.songId || song.id
+              };
+            }
+          } catch {}
         }
       }
 
       const params = new URLSearchParams({
         encryptedUrl: encryptedUrl ? encodeURIComponent(encryptedUrl) : '',
         pid: songPid || '',
-        id: songPid || song.id || '',
-        token: song.token || '',
+        id: songPid || '',
+        token: resolvedToken || '',
+        perma_url: song.perma_url || song.url || '',
         bitrate: chosenBitrate,
         languages: languagesQuery
       });
@@ -1092,6 +1394,11 @@ export default function App() {
       const data = await res.json();
 
       if (data.stream_url) {
+        if (currentBlobUrlRef.current) {
+          URL.revokeObjectURL(currentBlobUrlRef.current);
+          currentBlobUrlRef.current = null;
+        }
+
         audioRef.current.src = data.stream_url;
         audioRef.current.currentTime = previousTime;
         await audioRef.current.play();
@@ -1133,14 +1440,14 @@ export default function App() {
               songDetails,
               ...prev.filter((item) => (item.id || item._id) !== songDetails.id)
             ]);
-          } catch { }
+          } catch {}
         }
       } else {
         showToast('Unable to resolve audio stream for track');
       }
     } catch (err) {
       console.error('Audio playback error:', err);
-      showToast('Audio resolution failed');
+      showToast(!navigator.onLine ? 'You are offline. Only downloaded songs can be played.' : 'Audio resolution failed');
     } finally {
       setIsResolvingAudio(false);
     }
@@ -1158,7 +1465,9 @@ export default function App() {
   // Queue Operations
   const addToQueueIfNotPresent = (track) => {
     setQueue((prev) => {
-      const existsIdx = prev.findIndex((item) => item.id === track.id);
+      const existsIdx = prev.findIndex(
+        (item) => item.id === track.id || (track.songId && item.songId === track.songId)
+      );
       if (existsIdx >= 0) {
         setQueueIndex(existsIdx);
         return prev;
@@ -1172,7 +1481,7 @@ export default function App() {
 
   const handleAddToQueue = (track) => {
     setQueue((prev) => {
-      if (prev.some((item) => item.id === track.id)) {
+      if (prev.some((item) => item.id === track.id || (track.songId && item.songId === track.songId))) {
         showToast(`"${decodeHTMLEntities(track.title)}" is already in queue`);
         return prev;
       }
@@ -1378,22 +1687,50 @@ export default function App() {
 
   // Remove Track from Custom Playlist
   const handleRemoveTrackFromPlaylist = async (playlistId, songId) => {
-    if (!token) return;
+    if (!token || !playlistId || !songId) return;
+    const targetSongId = String(songId);
+
+    // 1. Optimistic UI update immediately
+    setUserPlaylists((prev) =>
+      prev.map((p) => {
+        if (p._id !== playlistId) return p;
+        return {
+          ...p,
+          songs: (p.songs || []).filter(
+            (s) => String(s.id) !== targetSongId && String(s.songId) !== targetSongId
+          )
+        };
+      })
+    );
+    if (selectedPlaylistDetail?._id === playlistId) {
+      setSelectedPlaylistDetail((prev) => ({
+        ...prev,
+        songs: (prev?.songs || []).filter(
+          (s) => String(s.id) !== targetSongId && String(s.songId) !== targetSongId
+        )
+      }));
+    }
+
     try {
-      const res = await fetch(`${API_BASE}/playlists/${playlistId}/songs/${songId}`, {
+      const res = await fetch(`${API_BASE}/playlists/${playlistId}/songs/${encodeURIComponent(songId)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        const updated = await res.json();
-        setUserPlaylists((prev) => prev.map((p) => (p._id === playlistId ? updated : p)));
-        if (selectedPlaylistDetail?._id === playlistId) {
-          setSelectedPlaylistDetail(updated);
+        const data = await res.json();
+        const updated = data.playlist || (data._id ? data : null);
+        if (updated && Array.isArray(updated.songs)) {
+          setUserPlaylists((prev) => prev.map((p) => (p._id === playlistId ? updated : p)));
+          if (selectedPlaylistDetail?._id === playlistId) {
+            setSelectedPlaylistDetail(updated);
+          }
         }
         showToast('Removed track from playlist');
+      } else {
+        showToast('Failed to remove track from server');
       }
     } catch {
-      showToast('Failed to remove track from playlist');
+      showToast('Offline — Track removed locally');
     }
   };
 
@@ -1473,6 +1810,7 @@ export default function App() {
           searchHistory={searchHistory}
           onClearSearchHistory={handleClearSearchHistory}
           guestTimeSpent={guestTimeSpent}
+          isOnline={isOnline}
         />
 
         {/* Content Body */}
@@ -1861,19 +2199,23 @@ export default function App() {
             </div>
           ) : activeTab === 'downloads' ? (
             <div>
+              {/* Header Title & Actions */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
                   <h2 className="text-2xl sm:text-3xl font-black text-slate-100 tracking-tight flex items-center gap-3">
                     <Download className="w-7 h-7 text-cyan-400" />
                     <span>My Downloads</span>
                   </h2>
-                  <p className="text-xs text-slate-400 mt-1">Songs you've downloaded — saved even if you lose local data</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Songs saved locally on your device — playable 100% offline without internet
+                  </p>
                 </div>
                 {Object.keys(downloads).length > 0 && (
                   <button
-                    onClick={() => {
+                    onClick={async () => {
+                      await clearAllOfflineTracks();
                       setDownloads({});
-                      showToast('Cleared download history');
+                      showToast('Cleared all downloaded tracks');
                     }}
                     className="text-xs font-bold px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20 transition self-start sm:self-center"
                   >
@@ -1882,18 +2224,90 @@ export default function App() {
                 )}
               </div>
 
+              {/* Local Music Folder & Offline Manager Bar */}
+              <div className="mb-6 p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-slate-900/90 via-[#0a1220]/90 to-slate-900/90 border border-cyan-500/30 shadow-xl relative overflow-hidden">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3.5 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
+                      <Folder className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm font-black text-white truncate">
+                          {localFolderName ? `Local Folder: ${localFolderName}` : 'Browser Offline Storage (Active)'}
+                        </h3>
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                          localFolderName ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                        }`}>
+                          {localFolderName ? 'Folder Connected' : 'IndexedDB Ready'}
+                        </span>
+                        {!isOnline && (
+                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">
+                            Offline Mode Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {localFolderName
+                          ? 'Songs are saved directly as MP3s into this local folder on your computer and can be fetched anytime.'
+                          : 'Select a PC folder to save real MP3 files directly to disk, or keep in high-speed browser cache.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap shrink-0">
+                    {localFolderName && (
+                      <button
+                        onClick={handleScanLocalFolder}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-bold transition shadow-sm active:scale-95"
+                        title="Scan this folder for audio files and add them to My Downloads"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Scan & Fetch Songs</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => setIsFolderModalOpen(true)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs font-bold transition active:scale-95"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>{localFolderName ? 'Manage Folder' : 'Select Local PC Folder'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               {Object.keys(downloads).length === 0 ? (
-                <div className="text-center py-20 bg-slate-900/40 rounded-3xl border border-slate-800 p-8 space-y-3">
+                <div className="text-center py-20 bg-slate-900/40 rounded-3xl border border-slate-800 p-8 space-y-4">
                   <Download className="w-12 h-12 text-slate-600 mx-auto stroke-1" />
-                  <h3 className="text-base font-bold text-slate-300">No downloads yet</h3>
-                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                    Tap the <Download className="w-3 h-3 inline" /> download icon on any song to save it. Your download list is always remembered here.
-                  </p>
+                  <div className="space-y-1">
+                    <h3 className="text-base font-bold text-slate-300">No downloads yet</h3>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                      Download songs to listen offline anytime with zero buffering. Or connect a PC folder with music files.
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-center gap-3 pt-2">
+                    <button
+                      onClick={() => setIsFolderModalOpen(true)}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold hover:bg-cyan-500/30 transition"
+                    >
+                      <FolderPlus className="w-4 h-4" />
+                      <span>Choose Music Folder</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('explore')}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold hover:bg-slate-750 transition"
+                    >
+                      <Sparkles className="w-4 h-4 text-emerald-400" />
+                      <span>Explore Music</span>
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {Object.values(downloads)
-                    .sort((a, b) => new Date(b.downloadedAt) - new Date(a.downloadedAt))
+                    .sort((a, b) => new Date(b.downloadedAt || 0) - new Date(a.downloadedAt || 0))
                     .map((song, idx) => (
                       <div key={song.id || idx} className="relative">
                         <TrackRow
@@ -1907,6 +2321,7 @@ export default function App() {
                             setIsPlaylistModalOpen(true);
                           }}
                           onDownload={handleDownload}
+                          onDeleteDownload={handleDeleteDownload}
                           isDownloaded={true}
                           isDownloading={downloadingId === song.id}
                           isFavorite={!!favorites[song.id]}
@@ -1916,12 +2331,27 @@ export default function App() {
                           upgradeImg={upgradeImg}
                           formatSeconds={formatSeconds}
                         />
-                        {song.downloadedAt && (
-                          <div className="absolute top-1 right-14 hidden sm:flex items-center gap-1 text-[9px] text-slate-600">
-                            <CheckCircle2 className="w-2.5 h-2.5 text-cyan-500" />
-                            {new Date(song.downloadedAt).toLocaleDateString()}
-                          </div>
-                        )}
+                        <div className="absolute top-1.5 right-14 hidden sm:flex items-center gap-2 text-[9px] text-slate-500">
+                          {song.isLocalFile ? (
+                            <span className="flex items-center gap-1 text-cyan-400 font-bold">
+                              <HardDrive className="w-2.5 h-2.5" /> Local Folder File
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-emerald-400 font-bold">
+                              <CheckCircle2 className="w-2.5 h-2.5" /> Offline Ready
+                            </span>
+                          )}
+                          {song.fileSize ? (
+                            <span className="text-slate-600 font-mono">
+                              • {(song.fileSize / (1024 * 1024)).toFixed(1)} MB
+                            </span>
+                          ) : null}
+                          {song.downloadedAt && (
+                            <span className="text-slate-600">
+                              • {new Date(song.downloadedAt).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     ))}
                 </div>
@@ -1977,8 +2407,8 @@ export default function App() {
                           setIsPlaylistModalOpen(true);
                         }}
                         onDownload={handleDownload}
-                        isDownloaded={!!downloads[song.id]}
-                        isDownloading={downloadingId === song.id}
+                        isDownloaded={Boolean(downloads[song.id] || (song.songId && downloads[song.songId]))}
+                        isDownloading={downloadingId === song.id || (song.songId && downloadingId === song.songId)}
                         isFavorite={true}
                         currentTrack={currentTrack}
                         isPlaying={isPlaying}
@@ -2062,12 +2492,19 @@ export default function App() {
                         {selectedPlaylistDetail.name}
                       </h1>
                       <p className="text-xs text-slate-400 mt-1">
-                        {selectedPlaylistDetail.songs?.length || 0} Tracks • Created by {user.name}
+                        {(selectedPlaylistDetail.songs || []).length} Tracks • Created by {user.name}
                       </p>
-                      {selectedPlaylistDetail.songs?.length > 0 && (
+                      {(selectedPlaylistDetail.songs || []).length > 0 && (
                         <div className="mt-4 flex gap-3">
                           <button
-                            onClick={() => handlePlayAllTracks(selectedPlaylistDetail.songs)}
+                            onClick={() => {
+                              const normalizedTracks = (selectedPlaylistDetail.songs || []).map((s) => {
+                                const isMongo = typeof s.id === 'string' && /^[0-9a-fA-F]{24}$/.test(s.id);
+                                const p = (s.songId || (!isMongo ? s.id : null) || s.id || '').toString();
+                                return { ...s, id: p, songId: p };
+                              });
+                              handlePlayAllTracks(normalizedTracks);
+                            }}
                             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 text-xs font-black hover:bg-emerald-400 transition"
                           >
                             <Play className="w-4 h-4 fill-current" />
@@ -2078,38 +2515,61 @@ export default function App() {
                     </div>
                   </div>
 
-                  {selectedPlaylistDetail.songs?.length === 0 ? (
+                  {(selectedPlaylistDetail.songs || []).length === 0 ? (
                     <div className="text-center py-12 text-slate-500 text-xs">
                       No tracks in this playlist yet. Add songs using the "+ Add to Playlist" button on tracks!
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {selectedPlaylistDetail.songs.map((song, idx) => (
-                        <div key={song.id || idx} className="flex items-center gap-2">
-                          <div className="flex-1">
-                            <TrackRow
-                              song={song}
-                              index={idx}
-                              onPlay={() => handlePlaySongFromList(selectedPlaylistDetail.songs, idx)}
-                              onAddToQueue={handleAddToQueue}
-                              onToggleFavorite={toggleFavorite}
-                              isFavorite={!!favorites[song.id]}
-                              currentTrack={currentTrack}
-                              isPlaying={isPlaying}
-                              isResolvingAudio={isResolvingAudio}
-                              upgradeImg={upgradeImg}
-                              formatSeconds={formatSeconds}
-                            />
+                      {(selectedPlaylistDetail.songs || []).map((song, idx) => {
+                        const isMongo = typeof song.id === 'string' && /^[0-9a-fA-F]{24}$/.test(song.id);
+                        const songPid = (song.songId || (!isMongo ? song.id : null) || song.id || '').toString();
+                        const normalizedSong = { ...song, id: songPid || song.id, songId: songPid || song.songId || song.id };
+                        const isSongDownloaded = Boolean(
+                          downloads[songPid] ||
+                          downloads[song.id] ||
+                          downloads[song.songId] ||
+                          (song.fileName && downloads[`local_${song.fileName}`])
+                        );
+                        const isSongDownloading = downloadingId === song.id || downloadingId === song.songId || downloadingId === songPid;
+
+                        return (
+                          <div key={song.id || song.songId || idx} className="flex items-center gap-2">
+                            <div className="flex-1">
+                              <TrackRow
+                                song={normalizedSong}
+                                index={idx}
+                                onPlay={() => {
+                                  const normalizedTracks = (selectedPlaylistDetail.songs || []).map((s) => {
+                                    const sm = typeof s.id === 'string' && /^[0-9a-fA-F]{24}$/.test(s.id);
+                                    const p = (s.songId || (!sm ? s.id : null) || s.id || '').toString();
+                                    return { ...s, id: p, songId: p };
+                                  });
+                                  handlePlaySongFromList(normalizedTracks, idx);
+                                }}
+                                onAddToQueue={handleAddToQueue}
+                                onToggleFavorite={toggleFavorite}
+                                onDownload={handleDownload}
+                                isDownloaded={isSongDownloaded}
+                                isDownloading={isSongDownloading}
+                                isFavorite={!!favorites[songPid] || !!favorites[song.id] || !!favorites[song.songId]}
+                                currentTrack={currentTrack}
+                                isPlaying={isPlaying}
+                                isResolvingAudio={isResolvingAudio}
+                                upgradeImg={upgradeImg}
+                                formatSeconds={formatSeconds}
+                              />
+                            </div>
+                            <button
+                              onClick={() => handleRemoveTrackFromPlaylist(selectedPlaylistDetail._id, song.id || song.songId)}
+                              title="Remove from playlist"
+                              className="p-2.5 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-slate-900 transition"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
-                          <button
-                            onClick={() => handleRemoveTrackFromPlaylist(selectedPlaylistDetail._id, song.id)}
-                            title="Remove from playlist"
-                            className="p-2.5 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-slate-900 transition"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -2242,6 +2702,9 @@ export default function App() {
                               setSelectedSongForPlaylist(songItem);
                               setIsPlaylistModalOpen(true);
                             }}
+                            onDownload={handleDownload}
+                            isDownloaded={Boolean(downloads[song.id] || (song.songId && downloads[song.songId]))}
+                            isDownloading={downloadingId === song.id || (song.songId && downloadingId === song.songId)}
                             isFavorite={!!favorites[song.id]}
                             currentTrack={currentTrack}
                             isPlaying={isPlaying}
@@ -2326,6 +2789,9 @@ export default function App() {
         artistMoreSongsLoading={artistMoreSongsLoading}
         upgradeImg={upgradeImg}
         formatSeconds={formatSeconds}
+        onDownload={handleDownload}
+        downloads={downloads}
+        downloadingId={downloadingId}
       />
 
       {/* Up Next Queue Drawer */}
@@ -2510,6 +2976,52 @@ export default function App() {
           token={token}
         />
       )}
+
+      {/* 6. Local Folder & Offline Storage Management Modal */}
+      <LocalFolderModal
+        isOpen={isFolderModalOpen}
+        onClose={() => setIsFolderModalOpen(false)}
+        folderName={localFolderName}
+        onFolderConnected={(name) => {
+          setLocalFolderName(name);
+          showToast(name ? `Local folder set: "${name}"` : 'Local folder disconnected');
+        }}
+        onSongsFetched={(newSongs) => {
+          if (newSongs && newSongs.length > 0) {
+            setDownloads((prev) => {
+              const updated = { ...prev };
+              for (const s of newSongs) {
+                updated[s.id] = s;
+              }
+              return updated;
+            });
+            showToast(`Synced ${newSongs.length} local track(s) into My Downloads!`);
+          }
+        }}
+      />
+
+      {/* 7. Download Destination Prompt Modal */}
+      <LocalFolderModal
+        isOpen={folderPromptOpen}
+        onClose={() => {
+          setFolderPromptOpen(false);
+          setPendingDownloadSong(null);
+        }}
+        folderName={localFolderName}
+        isPromptMode={true}
+        pendingSong={pendingDownloadSong?.song}
+        onFolderConnected={(name) => {
+          setLocalFolderName(name);
+        }}
+        onConfirmSaveOffline={async () => {
+          setFolderPromptOpen(false);
+          if (pendingDownloadSong) {
+            const { song, bitrate: bRate } = pendingDownloadSong;
+            setPendingDownloadSong(null);
+            await executeDownload(song, bRate);
+          }
+        }}
+      />
     </div>
   );
 }

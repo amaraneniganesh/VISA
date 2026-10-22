@@ -147,7 +147,7 @@ public class MusicService extends Service {
                     if (listener != null) listener.onPrevious();
                     break;
                 case ACTION_STOP:
-                    stopSelf();
+                    dismissNotification();
                     break;
             }
         }
@@ -155,14 +155,14 @@ public class MusicService extends Service {
     }
 
     public void updateNotification(String title, String artist, String album, String coverUrl, boolean playing, long positionMs, long durationMs) {
-        this.currentTitle = title != null ? title : "VISA MUSIC";
-        this.currentArtist = artist != null ? artist : "";
+        this.currentTitle = (title != null && !title.trim().isEmpty()) ? title : "VISA MUSIC";
+        this.currentArtist = (artist != null && !artist.trim().isEmpty()) ? artist : "Artist";
         this.currentAlbum = album != null ? album : "";
         this.isPlaying = playing;
         this.currentPositionMs = positionMs;
         this.currentDurationMs = durationMs;
 
-        if (coverUrl != null && !coverUrl.equals(this.currentCoverUrl)) {
+        if (coverUrl != null && !coverUrl.trim().isEmpty() && !coverUrl.equals(this.currentCoverUrl)) {
             this.currentCoverUrl = coverUrl;
             fetchBitmapAndNotify(coverUrl);
         } else {
@@ -176,7 +176,10 @@ public class MusicService extends Service {
             try {
                 URL url = new URL(urlString);
                 HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setInstanceFollowRedirects(true);
                 connection.setDoInput(true);
+                connection.setConnectTimeout(6000);
+                connection.setReadTimeout(6000);
                 connection.connect();
                 InputStream input = connection.getInputStream();
                 bitmap = BitmapFactory.decodeStream(input);
@@ -262,6 +265,12 @@ public class MusicService extends Service {
         }
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        super.onTaskRemoved(rootIntent);
+        dismissNotification();
     }
 
     @Nullable

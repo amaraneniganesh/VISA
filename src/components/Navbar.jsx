@@ -16,7 +16,8 @@ import {
   ShieldAlert,
   Clock,
   Trash2,
-  Timer
+  Timer,
+  WifiOff
 } from 'lucide-react';
 import { decodeHTMLEntities } from '../utils/formatters';
 
@@ -44,7 +45,8 @@ export default function Navbar({
   onOpenAdmin,
   searchHistory = [],
   onClearSearchHistory,
-  guestTimeRemaining = 900
+  guestTimeRemaining = 900,
+  isOnline = true
 }) {
   const [showMobileSpotlightMenu, setShowMobileSpotlightMenu] = useState(false);
   const [mobileCategory, setMobileCategory] = useState('artists');
@@ -302,6 +304,16 @@ export default function Navbar({
 
       {/* User Auth / Admin / Profile & Limit */}
       <div className="flex items-center gap-2 shrink-0 ml-auto">
+        {!isOnline && (
+          <button
+            onClick={() => setActiveTab('downloads')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500/15 text-amber-300 border border-amber-500/40 text-xs font-black hover:bg-amber-500/25 transition animate-pulse shrink-0 shadow-lg shadow-amber-500/10"
+            title="You are offline. Downloaded songs are ready to play. Tap to open My Downloads."
+          >
+            <WifiOff className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden xs:inline">Offline Mode</span>
+          </button>
+        )}
         {user ? (
           <div className="flex items-center gap-2">
             {user.isAdmin && (

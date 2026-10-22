@@ -23,7 +23,10 @@ export default function DetailModal({
   onLoadMoreArtistSongs,
   artistMoreSongsLoading,
   upgradeImg,
-  formatSeconds
+  formatSeconds,
+  onDownload,
+  downloads = {},
+  downloadingId
 }) {
   if (!selectedEntity) return null;
 
@@ -112,23 +115,36 @@ export default function DetailModal({
             <>
               {/* Song Tracklist */}
               <div className="space-y-1.5">
-                {songList.map((song, idx) => (
-                  <TrackRow
-                    key={song.id || idx}
-                    song={song}
-                    index={idx}
-                    onPlay={() => onPlaySongFromList(songList, idx)}
-                    onAddToQueue={onAddToQueue}
-                    onOpenAddToPlaylist={onOpenAddToPlaylist}
-                    onToggleFavorite={onToggleFavorite}
-                    isFavorite={!!favoritesMap[song.id]}
-                    currentTrack={currentTrack}
-                    isPlaying={isPlaying}
-                    isResolvingAudio={isResolvingAudio}
-                    upgradeImg={upgradeImg}
-                    formatSeconds={formatSeconds}
-                  />
-                ))}
+                {songList.map((song, idx) => {
+                  const isSongDownloaded = Boolean(
+                    downloads[song.id] ||
+                    (song.songId && downloads[song.songId]) ||
+                    (song.fileName && downloads[`local_${song.fileName}`])
+                  );
+                  const isSongDownloading =
+                    downloadingId === song.id || (song.songId && downloadingId === song.songId);
+
+                  return (
+                    <TrackRow
+                      key={song.id || idx}
+                      song={song}
+                      index={idx}
+                      onPlay={() => onPlaySongFromList(songList, idx)}
+                      onAddToQueue={onAddToQueue}
+                      onOpenAddToPlaylist={onOpenAddToPlaylist}
+                      onToggleFavorite={onToggleFavorite}
+                      onDownload={onDownload}
+                      isDownloaded={isSongDownloaded}
+                      isDownloading={isSongDownloading}
+                      isFavorite={!!favoritesMap[song.id]}
+                      currentTrack={currentTrack}
+                      isPlaying={isPlaying}
+                      isResolvingAudio={isResolvingAudio}
+                      upgradeImg={upgradeImg}
+                      formatSeconds={formatSeconds}
+                    />
+                  );
+                })}
               </div>
 
               {/* Artist Pagination Load More */}
