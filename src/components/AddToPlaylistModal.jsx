@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Plus, ListMusic, Check, Sparkles, CheckCircle2 } from 'lucide-react';
 import { decodeHTMLEntities } from '../utils/formatters';
 
+const API_BASE = (import.meta.env.VITE_API_BASE || 'https://visa-server-7qzv.onrender.com/api').trim();
+
 export default function AddToPlaylistModal({
   isOpen,
   onClose,
@@ -15,7 +17,12 @@ export default function AddToPlaylistModal({
 }) {
   if (!isOpen) return null;
 
-  const songToUse = song || targetSong;
+  const rawSongToUse = song || targetSong;
+  const songToUse = rawSongToUse ? {
+    ...rawSongToUse,
+    id: rawSongToUse.songId || rawSongToUse.id,
+    songId: rawSongToUse.songId || rawSongToUse.id
+  } : null;
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showCreateInput, setShowCreateInput] = useState(!songToUse);
   const [loadingId, setLoadingId] = useState(null);
@@ -45,7 +52,7 @@ export default function AddToPlaylistModal({
     setErrorMsg('');
 
     try {
-      const res = await fetch(' https://visa-server-7qzv.onrender.com/api/playlists/add-song', {
+      const res = await fetch(`${API_BASE}/playlists/add-song`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

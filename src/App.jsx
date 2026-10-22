@@ -112,6 +112,49 @@ function sortItems(list = [], option = 'default') {
   return arr;
 }
 
+export const isMongoObjectId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+
+export const resolveTrackPid = (song) => {
+  if (!song) return '';
+  if (song.songId && typeof song.songId === 'string' && song.songId.trim() !== '') {
+    return song.songId.trim();
+  }
+  if (song.id && typeof song.id === 'string' && song.id.trim() !== '') {
+    if (!isMongoObjectId(song.id.trim())) return song.id.trim();
+  }
+  if (song._id && typeof song._id === 'string' && !isMongoObjectId(song._id.trim())) {
+    return song._id.trim();
+  }
+  return '';
+};
+
+export const resolveTrackToken = (song) => {
+  if (!song) return '';
+  if (song.token && typeof song.token === 'string' && song.token.trim() !== '') {
+    return song.token.trim().replace(/\?.*$/, '');
+  }
+  const perma = song.perma_url || song.url || '';
+  if (perma && typeof perma === 'string') {
+    const clean = perma.split('?')[0].replace(/\/$/, '');
+    const parts = clean.split('/');
+    const last = parts[parts.length - 1];
+    if (last && !last.includes('jiosaavn.com')) return last;
+  }
+  return '';
+};
+
+export const sanitizeTrack = (song) => {
+  if (!song) return song;
+  const pid = resolveTrackPid(song);
+  const token = resolveTrackToken(song);
+  return {
+    ...song,
+    id: pid || song.id || song.songId || '',
+    songId: pid || song.songId || song.id || '',
+    token: token || song.token || ''
+  };
+};
+
 export default function App() {
   // ----------------------------------------------------
   // User Authentication & Profile State
@@ -232,7 +275,15 @@ export default function App() {
       });
       if (playlistsRes.ok) {
         const playlistsData = await playlistsRes.json();
-        setUserPlaylists(playlistsData);
+        const sanitized = (playlistsData || []).map((p) => ({
+          ...p,
+          songs: (p.songs || []).map(sanitizeTrack)
+        }));
+        setUserPlaylists(sanitized);
+        if (selectedPlaylistDetail) {
+          const updatedSelected = sanitized.find((p) => p._id === selectedPlaylistDetail._id);
+          if (updatedSelected) setSelectedPlaylistDetail(updatedSelected);
+        }
       }
 
       // 3. Fetch Listening History
@@ -885,19 +936,13 @@ export default function App() {
   };
 
   // Core Song Downloader — saves blob locally to IndexedDB & selected PC folder
-  const executeDownload = async (song = currentTrack, chosenBitrate = bitrate || '320') => {
-    const targetSong = song || currentTrack;
+  const executeDownload = async (rawSong = currentTrack, chosenBitrate = bitrate || '320') => {
+    const targetSong = sanitizeTrack(rawSong || currentTrack);
     if (!targetSong || (!targetSong.id && !targetSong.songId)) return;
     if (downloadingId === targetSong.id || downloadingId === targetSong.songId) return;
 
-    const isMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
-    const resolvedPid = (targetSong.songId || (!isMongoId(targetSong.id) ? targetSong.id : null) || '').toString();
-    let songToken = targetSong.token || '';
-    if (!songToken && (targetSong.perma_url || targetSong.url)) {
-      const cleanUrl = (targetSong.perma_url || targetSong.url).split('?')[0].replace(/\/$/, '');
-      const parts = cleanUrl.split('/');
-      songToken = parts[parts.length - 1] || '';
-    }
+    const resolvedPid = resolveTrackPid(targetSong);
+    const songToken = resolveTrackToken(targetSong);
 
     setDownloadingId(targetSong.id || resolvedPid);
     showToast(`Downloading "${decodeHTMLEntities(targetSong.title)}" (${chosenBitrate}k)...`);
@@ -1246,17 +1291,12 @@ export default function App() {
   };
 
   // Play Audio Track via Local Offline Storage or Direct Stream Proxy
-  const handlePlayFullSong = async (song, chosenBitrate = bitrate) => {
-    if (!song) return;
+  const handlePlayFullSong = async (rawSong, chosenBitrate = bitrate) => {
+    if (!rawSong) return;
+    const song = sanitizeTrack(rawSong);
 
-    const isMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
-    const resolvedPid = (song.songId || (!isMongoId(song.id) ? song.id : null) || '').toString();
-    let resolvedToken = song.token || '';
-    if (!resolvedToken && (song.perma_url || song.url)) {
-      const cleanUrl = (song.perma_url || song.url).split('?')[0].replace(/\/$/, '');
-      const parts = cleanUrl.split('/');
-      resolvedToken = parts[parts.length - 1] || '';
-    }
+    const resolvedPid = resolveTrackPid(song);
+    const resolvedToken = resolveTrackToken(song);
 
     const isDownloadedSong = Boolean(
       downloads[song.id] ||
@@ -1272,7 +1312,9 @@ export default function App() {
       return;
     }
 
-    const isSameTrack = currentTrack?.id === song.id || (resolvedPid && currentTrack?.id === resolvedPid);
+    const isSameTrack =
+      currentTrack?.id === song.id ||
+      (resolvedPid && (currentTrack?.id === resolvedPid || currentTrack?.songId === resolvedPid));
     if (isSameTrack && chosenBitrate === bitrate) {
       togglePlayPause();
       return;
@@ -1299,6 +1341,7 @@ export default function App() {
           ...song,
           id: resolvedPid || song.id,
           songId: resolvedPid || song.songId || song.id,
+          token: resolvedToken || song.token || '',
           isOffline: true
         };
         setCurrentTrack(offlineSongDetails);
@@ -1353,7 +1396,7 @@ export default function App() {
         ...song,
         id: resolvedPid || song.id,
         songId: resolvedPid || song.songId || song.id,
-        token: resolvedToken
+        token: resolvedToken || song.token || ''
       };
 
       if (!encryptedUrl) {
@@ -1373,7 +1416,8 @@ export default function App() {
                 ...song,
                 ...fullSong,
                 id: songPid || song.id,
-                songId: songPid || song.songId || song.id
+                songId: songPid || song.songId || song.id,
+                token: resolvedToken || fullSong.token || song.token
               };
             }
           } catch {}
@@ -1384,7 +1428,7 @@ export default function App() {
         encryptedUrl: encryptedUrl ? encodeURIComponent(encryptedUrl) : '',
         pid: songPid || '',
         id: songPid || '',
-        token: resolvedToken || '',
+        token: resolvedToken || song.token || '',
         perma_url: song.perma_url || song.url || '',
         bitrate: chosenBitrate,
         languages: languagesQuery
@@ -1456,14 +1500,16 @@ export default function App() {
   // Play Song From Container List
   const handlePlaySongFromList = (trackList, index) => {
     if (!trackList || trackList.length === 0 || !trackList[index]) return;
-    setQueue(trackList);
+    const sanitizedList = trackList.map(sanitizeTrack);
+    setQueue(sanitizedList);
     setQueueIndex(index);
-    handlePlayFullSong(trackList[index]);
-    showToast(`Playing "${decodeHTMLEntities(trackList[index].title)}" • Loaded ${trackList.length} tracks into queue`);
+    handlePlayFullSong(sanitizedList[index]);
+    showToast(`Playing "${decodeHTMLEntities(sanitizedList[index].title)}" • Loaded ${sanitizedList.length} tracks into queue`);
   };
 
   // Queue Operations
-  const addToQueueIfNotPresent = (track) => {
+  const addToQueueIfNotPresent = (rawTrack) => {
+    const track = sanitizeTrack(rawTrack);
     setQueue((prev) => {
       const existsIdx = prev.findIndex(
         (item) => item.id === track.id || (track.songId && item.songId === track.songId)
@@ -1479,7 +1525,8 @@ export default function App() {
     });
   };
 
-  const handleAddToQueue = (track) => {
+  const handleAddToQueue = (rawTrack) => {
+    const track = sanitizeTrack(rawTrack);
     setQueue((prev) => {
       if (prev.some((item) => item.id === track.id || (track.songId && item.songId === track.songId))) {
         showToast(`"${decodeHTMLEntities(track.title)}" is already in queue`);
@@ -1492,17 +1539,19 @@ export default function App() {
 
   const handlePlayAllTracks = (trackList) => {
     if (!trackList || trackList.length === 0) return;
-    setQueue(trackList);
+    const sanitizedList = trackList.map(sanitizeTrack);
+    setQueue(sanitizedList);
     setQueueIndex(0);
-    handlePlayFullSong(trackList[0]);
-    showToast(`Loaded ${trackList.length} tracks into queue`);
+    handlePlayFullSong(sanitizedList[0]);
+    showToast(`Loaded ${sanitizedList.length} tracks into queue`);
   };
 
   const handleAddAllToQueue = (trackList) => {
     if (!trackList || trackList.length === 0) return;
+    const sanitizedList = trackList.map(sanitizeTrack);
     setQueue((prev) => {
-      const existingIds = new Set(prev.map((t) => t.id));
-      const additions = trackList.filter((t) => !existingIds.has(t.id));
+      const existingIds = new Set(prev.map((t) => t.id || t.songId));
+      const additions = sanitizedList.filter((t) => !existingIds.has(t.id) && !existingIds.has(t.songId));
       showToast(`Added ${additions.length} tracks to queue`);
       return [...prev, ...additions];
     });
@@ -1720,9 +1769,13 @@ export default function App() {
         const data = await res.json();
         const updated = data.playlist || (data._id ? data : null);
         if (updated && Array.isArray(updated.songs)) {
-          setUserPlaylists((prev) => prev.map((p) => (p._id === playlistId ? updated : p)));
+          const sanitizedUpdated = {
+            ...updated,
+            songs: updated.songs.map(sanitizeTrack)
+          };
+          setUserPlaylists((prev) => prev.map((p) => (p._id === playlistId ? sanitizedUpdated : p)));
           if (selectedPlaylistDetail?._id === playlistId) {
-            setSelectedPlaylistDetail(updated);
+            setSelectedPlaylistDetail(sanitizedUpdated);
           }
         }
         showToast('Removed track from playlist');
@@ -2498,12 +2551,8 @@ export default function App() {
                         <div className="mt-4 flex gap-3">
                           <button
                             onClick={() => {
-                              const normalizedTracks = (selectedPlaylistDetail.songs || []).map((s) => {
-                                const isMongo = typeof s.id === 'string' && /^[0-9a-fA-F]{24}$/.test(s.id);
-                                const p = (s.songId || (!isMongo ? s.id : null) || s.id || '').toString();
-                                return { ...s, id: p, songId: p };
-                              });
-                              handlePlayAllTracks(normalizedTracks);
+                              const sanitizedTracks = (selectedPlaylistDetail.songs || []).map(sanitizeTrack);
+                              handlePlayAllTracks(sanitizedTracks);
                             }}
                             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 text-xs font-black hover:bg-emerald-400 transition"
                           >
@@ -2521,31 +2570,25 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {(selectedPlaylistDetail.songs || []).map((song, idx) => {
-                        const isMongo = typeof song.id === 'string' && /^[0-9a-fA-F]{24}$/.test(song.id);
-                        const songPid = (song.songId || (!isMongo ? song.id : null) || song.id || '').toString();
-                        const normalizedSong = { ...song, id: songPid || song.id, songId: songPid || song.songId || song.id };
+                      {((selectedPlaylistDetail.songs || []).map(sanitizeTrack)).map((song, idx) => {
+                        const songPid = resolveTrackPid(song);
                         const isSongDownloaded = Boolean(
                           downloads[songPid] ||
                           downloads[song.id] ||
                           downloads[song.songId] ||
                           (song.fileName && downloads[`local_${song.fileName}`])
                         );
-                        const isSongDownloading = downloadingId === song.id || downloadingId === song.songId || downloadingId === songPid;
+                        const isSongDownloading = downloadingId === song.id || downloadingId === song.songId || (songPid && downloadingId === songPid);
 
                         return (
                           <div key={song.id || song.songId || idx} className="flex items-center gap-2">
                             <div className="flex-1">
                               <TrackRow
-                                song={normalizedSong}
+                                song={song}
                                 index={idx}
                                 onPlay={() => {
-                                  const normalizedTracks = (selectedPlaylistDetail.songs || []).map((s) => {
-                                    const sm = typeof s.id === 'string' && /^[0-9a-fA-F]{24}$/.test(s.id);
-                                    const p = (s.songId || (!sm ? s.id : null) || s.id || '').toString();
-                                    return { ...s, id: p, songId: p };
-                                  });
-                                  handlePlaySongFromList(normalizedTracks, idx);
+                                  const sanitizedTracks = (selectedPlaylistDetail.songs || []).map(sanitizeTrack);
+                                  handlePlaySongFromList(sanitizedTracks, idx);
                                 }}
                                 onAddToQueue={handleAddToQueue}
                                 onToggleFavorite={toggleFavorite}
@@ -2586,7 +2629,10 @@ export default function App() {
                   {userPlaylists.map((pl) => (
                     <div
                       key={pl._id}
-                      onClick={() => setSelectedPlaylistDetail(pl)}
+                      onClick={() => setSelectedPlaylistDetail({
+                        ...pl,
+                        songs: (pl.songs || []).map(sanitizeTrack)
+                      })}
                       className="group p-5 rounded-2xl glass-panel border border-slate-800/80 hover:border-emerald-500/40 transition cursor-pointer flex items-center gap-4"
                     >
                       <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0 group-hover:scale-105 transition">
@@ -2957,14 +3003,22 @@ export default function App() {
         playlists={userPlaylists}
         token={token}
         onPlaylistUpdated={(updatedPlaylist) => {
+          if (!updatedPlaylist) return;
+          const sanitizedPl = {
+            ...updatedPlaylist,
+            songs: (updatedPlaylist.songs || []).map(sanitizeTrack)
+          };
           setUserPlaylists((prev) => {
-            const exists = prev.some((p) => p._id === updatedPlaylist._id);
+            const exists = prev.some((p) => p._id === sanitizedPl._id);
             if (exists) {
-              return prev.map((p) => (p._id === updatedPlaylist._id ? updatedPlaylist : p));
+              return prev.map((p) => (p._id === sanitizedPl._id ? sanitizedPl : p));
             }
-            return [...prev, updatedPlaylist];
+            return [...prev, sanitizedPl];
           });
-          showToast(`Playlist "${updatedPlaylist.name}" updated!`);
+          if (selectedPlaylistDetail?._id === sanitizedPl._id) {
+            setSelectedPlaylistDetail(sanitizedPl);
+          }
+          showToast(`Playlist "${sanitizedPl.name}" updated!`);
         }}
       />
 

@@ -136,7 +136,7 @@ export default function DetailModal({
                       onDownload={onDownload}
                       isDownloaded={isSongDownloaded}
                       isDownloading={isSongDownloading}
-                      isFavorite={!!favoritesMap[song.id]}
+                      isFavorite={!!favoritesMap[song.id] || (song.songId && !!favoritesMap[song.songId])}
                       currentTrack={currentTrack}
                       isPlaying={isPlaying}
                       isResolvingAudio={isResolvingAudio}
