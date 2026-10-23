@@ -17,11 +17,24 @@ export default function AddToPlaylistModal({
 }) {
   if (!isOpen) return null;
 
+  const isMongoId = (val) => typeof val === 'string' && /^[0-9a-fA-F]{24}$/.test(val);
   const rawSongToUse = song || targetSong;
+  let cleanId = '';
+  if (rawSongToUse) {
+    if (rawSongToUse.songId && !isMongoId(rawSongToUse.songId)) cleanId = String(rawSongToUse.songId);
+    else if (rawSongToUse.id && !isMongoId(rawSongToUse.id)) cleanId = String(rawSongToUse.id);
+  }
+  let songToken = rawSongToUse?.token || '';
+  if (!songToken && (rawSongToUse?.perma_url || rawSongToUse?.url)) {
+    const parts = (rawSongToUse.perma_url || rawSongToUse.url).split('?')[0].replace(/\/$/, '').split('/');
+    const last = parts[parts.length - 1];
+    if (last && !last.includes('jiosaavn.com')) songToken = last;
+  }
   const songToUse = rawSongToUse ? {
     ...rawSongToUse,
-    id: rawSongToUse.songId || rawSongToUse.id,
-    songId: rawSongToUse.songId || rawSongToUse.id
+    id: cleanId || songToken || rawSongToUse.songId || rawSongToUse.id,
+    songId: cleanId || songToken || rawSongToUse.songId || rawSongToUse.id,
+    token: songToken
   } : null;
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showCreateInput, setShowCreateInput] = useState(!songToUse);

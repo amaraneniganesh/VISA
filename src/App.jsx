@@ -117,7 +117,7 @@ export const isMongoObjectId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{2
 export const resolveTrackPid = (song) => {
   if (!song) return '';
   if (song.songId && typeof song.songId === 'string' && song.songId.trim() !== '') {
-    return song.songId.trim();
+    if (!isMongoObjectId(song.songId.trim())) return song.songId.trim();
   }
   if (song.id && typeof song.id === 'string' && song.id.trim() !== '') {
     if (!isMongoObjectId(song.id.trim())) return song.id.trim();
@@ -147,10 +147,11 @@ export const sanitizeTrack = (song) => {
   if (!song) return song;
   const pid = resolveTrackPid(song);
   const token = resolveTrackToken(song);
+  const cleanId = pid || (song.id && !isMongoObjectId(song.id) ? song.id : '') || (song.songId && !isMongoObjectId(song.songId) ? song.songId : '') || token || String(song.id || song.songId || '');
   return {
     ...song,
-    id: pid || song.id || song.songId || '',
-    songId: pid || song.songId || song.id || '',
+    id: cleanId,
+    songId: cleanId,
     token: token || song.token || ''
   };
 };
@@ -382,6 +383,22 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState('off');
+
+  // Synchronous State References for Audio Queue Event Loop
+  const queueRef = useRef(queue);
+  queueRef.current = queue;
+
+  const queueIndexRef = useRef(queueIndex);
+  queueIndexRef.current = queueIndex;
+
+  const repeatModeRef = useRef(repeatMode);
+  repeatModeRef.current = repeatMode;
+
+  const isShuffleRef = useRef(isShuffle);
+  isShuffleRef.current = isShuffle;
+
+  const currentTrackRef = useRef(currentTrack);
+  currentTrackRef.current = currentTrack;
 
   // Expanded Fullscreen Studio View
   const [isExpandedStudio, setIsExpandedStudio] = useState(false);
@@ -731,10 +748,45 @@ export default function App() {
     }
   };
 
+  // Handle Track Ended Queue Flow
+  const handleTrackEnded = () => {
+    const currentQueue = queueRef.current;
+    const currentIdx = queueIndexRef.current;
+    const currentRepeat = repeatModeRef.current;
+    const currentShuffle = isShuffleRef.current;
+
+    if (currentRepeat === 'one') {
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch(console.error);
+        setIsPlaying(true);
+      }
+      return;
+    }
+
+    if (currentQueue && currentQueue.length > 0) {
+      let nextIdx = currentIdx + 1;
+      if (currentShuffle) {
+        nextIdx = Math.floor(Math.random() * currentQueue.length);
+      }
+      if (nextIdx < currentQueue.length) {
+        setQueueIndex(nextIdx);
+        queueIndexRef.current = nextIdx;
+        handlePlayFullSong(currentQueue[nextIdx], bitrate, false);
+      } else if (currentRepeat === 'all') {
+        setQueueIndex(0);
+        queueIndexRef.current = 0;
+        handlePlayFullSong(currentQueue[0], bitrate, false);
+      } else {
+        setIsPlaying(false);
+      }
+    }
+  };
+
   // Audio Event Listeners & Queue Auto-advance
   useEffect(() => {
     const audio = audioRef.current;
-    audio.volume = volume;
+    if (!audio) return;
 
     const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
     const handleLoadedMetadata = () => setDuration(audio.duration);
@@ -752,28 +804,14 @@ export default function App() {
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('ended', handleEnded);
     };
-  }, [queue, queueIndex, repeatMode, isShuffle]);
+  }, []);
 
-  // Handle Track Ended Queue Flow
-  const handleTrackEnded = () => {
-    if (repeatMode === 'one') {
-      audioRef.current.currentTime = 0;
-      audioRef.current.play();
-      setIsPlaying(true);
-    } else if (queue.length > 0) {
-      let nextIdx = queueIndex + 1;
-      if (isShuffle) {
-        nextIdx = Math.floor(Math.random() * queue.length);
-      }
-      if (nextIdx < queue.length) {
-        setQueueIndex(nextIdx);
-        handlePlayFullSong(queue[nextIdx]);
-      } else if (repeatMode === 'all') {
-        setQueueIndex(0);
-        handlePlayFullSong(queue[0]);
-      }
+  // Sync Volume
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
     }
-  };
+  }, [volume]);
 
   // Fetch Footer Details (Multi-Language)
   useEffect(() => {
@@ -1291,7 +1329,7 @@ export default function App() {
   };
 
   // Play Audio Track via Local Offline Storage or Direct Stream Proxy
-  const handlePlayFullSong = async (rawSong, chosenBitrate = bitrate) => {
+  const handlePlayFullSong = async (rawSong, chosenBitrate = bitrate, shouldAddToQueue = true) => {
     if (!rawSong) return;
     const song = sanitizeTrack(rawSong);
 
@@ -1346,7 +1384,9 @@ export default function App() {
         };
         setCurrentTrack(offlineSongDetails);
         setIsPlaying(true);
-        addToQueueIfNotPresent(offlineSongDetails);
+        if (shouldAddToQueue) {
+          addToQueueIfNotPresent(offlineSongDetails);
+        }
 
         showToast(`Playing offline: "${decodeHTMLEntities(song.title || 'Track')}" ⚡`);
         setIsResolvingAudio(false);
@@ -1452,8 +1492,10 @@ export default function App() {
         // Fetch Recommendations by Artist
         fetchArtistRecommendations(songDetails);
 
-        // Ensure track is present in queue
-        addToQueueIfNotPresent(songDetails);
+        // Ensure track is present in queue only for standalone playback
+        if (shouldAddToQueue) {
+          addToQueueIfNotPresent(songDetails);
+        }
 
         // Record Listening History & Backend Database Analytics if Logged In
         if (token) {
@@ -1487,11 +1529,31 @@ export default function App() {
           } catch {}
         }
       } else {
-        showToast('Unable to resolve audio stream for track');
+        showToast(`Unable to stream "${decodeHTMLEntities(song.title || 'Track')}". Skipping to next...`);
+        const currentQueue = queueRef.current;
+        const currentIdx = queueIndexRef.current;
+        if (currentQueue && currentIdx + 1 < currentQueue.length) {
+          const nextIdx = currentIdx + 1;
+          setQueueIndex(nextIdx);
+          queueIndexRef.current = nextIdx;
+          setTimeout(() => {
+            handlePlayFullSong(currentQueue[nextIdx], chosenBitrate, false);
+          }, 800);
+        }
       }
     } catch (err) {
       console.error('Audio playback error:', err);
-      showToast(!navigator.onLine ? 'You are offline. Only downloaded songs can be played.' : 'Audio resolution failed');
+      showToast(!navigator.onLine ? 'You are offline. Only downloaded songs can be played.' : 'Playback error. Skipping to next...');
+      const currentQueue = queueRef.current;
+      const currentIdx = queueIndexRef.current;
+      if (navigator.onLine && currentQueue && currentIdx + 1 < currentQueue.length) {
+        const nextIdx = currentIdx + 1;
+        setQueueIndex(nextIdx);
+        queueIndexRef.current = nextIdx;
+        setTimeout(() => {
+          handlePlayFullSong(currentQueue[nextIdx], chosenBitrate, false);
+        }, 800);
+      }
     } finally {
       setIsResolvingAudio(false);
     }
@@ -1503,7 +1565,9 @@ export default function App() {
     const sanitizedList = trackList.map(sanitizeTrack);
     setQueue(sanitizedList);
     setQueueIndex(index);
-    handlePlayFullSong(sanitizedList[index]);
+    queueRef.current = sanitizedList;
+    queueIndexRef.current = index;
+    handlePlayFullSong(sanitizedList[index], bitrate, false);
     showToast(`Playing "${decodeHTMLEntities(sanitizedList[index].title)}" • Loaded ${sanitizedList.length} tracks into queue`);
   };
 
@@ -1512,16 +1576,19 @@ export default function App() {
     const track = sanitizeTrack(rawTrack);
     setQueue((prev) => {
       const existsIdx = prev.findIndex(
-        (item) => item.id === track.id || (track.songId && item.songId === track.songId)
+        (item) =>
+          item.id === track.id ||
+          (track.songId && item.songId === track.songId) ||
+          (track.token && item.token === track.token) ||
+          (track.perma_url && item.perma_url === track.perma_url) ||
+          (track.title && item.title && track.title.toLowerCase() === item.title.toLowerCase())
       );
       if (existsIdx >= 0) {
-        setQueueIndex(existsIdx);
         return prev;
-      } else {
-        const updated = [...prev, track];
-        setQueueIndex(updated.length - 1);
-        return updated;
       }
+      const updated = [...prev, track];
+      queueRef.current = updated;
+      return updated;
     });
   };
 
@@ -1533,7 +1600,9 @@ export default function App() {
         return prev;
       }
       showToast(`Added "${decodeHTMLEntities(track.title)}" to queue`);
-      return [...prev, track];
+      const updated = [...prev, track];
+      queueRef.current = updated;
+      return updated;
     });
   };
 
@@ -1542,7 +1611,9 @@ export default function App() {
     const sanitizedList = trackList.map(sanitizeTrack);
     setQueue(sanitizedList);
     setQueueIndex(0);
-    handlePlayFullSong(sanitizedList[0]);
+    queueRef.current = sanitizedList;
+    queueIndexRef.current = 0;
+    handlePlayFullSong(sanitizedList[0], bitrate, false);
     showToast(`Loaded ${sanitizedList.length} tracks into queue`);
   };
 
@@ -1553,53 +1624,78 @@ export default function App() {
       const existingIds = new Set(prev.map((t) => t.id || t.songId));
       const additions = sanitizedList.filter((t) => !existingIds.has(t.id) && !existingIds.has(t.songId));
       showToast(`Added ${additions.length} tracks to queue`);
-      return [...prev, ...additions];
+      const updated = [...prev, ...additions];
+      queueRef.current = updated;
+      return updated;
     });
   };
 
   const handleRemoveFromQueue = (index) => {
-    setQueue((prev) => prev.filter((_, i) => i !== index));
+    setQueue((prev) => {
+      const updated = prev.filter((_, i) => i !== index);
+      queueRef.current = updated;
+      return updated;
+    });
     if (index < queueIndex) {
-      setQueueIndex((prev) => prev - 1);
+      setQueueIndex((prev) => {
+        const next = prev - 1;
+        queueIndexRef.current = next;
+        return next;
+      });
     }
     showToast('Removed track from queue');
   };
 
   const handleClearQueue = () => {
-    setQueue(currentTrack ? [currentTrack] : []);
+    const fresh = currentTrack ? [currentTrack] : [];
+    setQueue(fresh);
     setQueueIndex(0);
+    queueRef.current = fresh;
+    queueIndexRef.current = 0;
     showToast('Cleared playback queue');
   };
 
   const handlePlayQueueTrack = (index) => {
-    if (queue[index]) {
+    const currentQueue = queueRef.current;
+    if (currentQueue && currentQueue[index]) {
       setQueueIndex(index);
-      handlePlayFullSong(queue[index]);
+      queueIndexRef.current = index;
+      handlePlayFullSong(currentQueue[index], bitrate, false);
     }
   };
 
   // Track Prev / Next
   const handleNextTrack = () => {
-    if (queue.length === 0) return;
-    let nextIdx = queueIndex + 1;
-    if (isShuffle) {
-      nextIdx = Math.floor(Math.random() * queue.length);
+    const currentQueue = queueRef.current;
+    const currentIdx = queueIndexRef.current;
+    const currentRepeat = repeatModeRef.current;
+    const currentShuffle = isShuffleRef.current;
+
+    if (!currentQueue || currentQueue.length === 0) return;
+    let nextIdx = currentIdx + 1;
+    if (currentShuffle) {
+      nextIdx = Math.floor(Math.random() * currentQueue.length);
     }
-    if (nextIdx < queue.length) {
+    if (nextIdx < currentQueue.length) {
       setQueueIndex(nextIdx);
-      handlePlayFullSong(queue[nextIdx]);
-    } else if (repeatMode === 'all') {
+      queueIndexRef.current = nextIdx;
+      handlePlayFullSong(currentQueue[nextIdx], bitrate, false);
+    } else if (currentRepeat === 'all') {
       setQueueIndex(0);
-      handlePlayFullSong(queue[0]);
+      queueIndexRef.current = 0;
+      handlePlayFullSong(currentQueue[0], bitrate, false);
     }
   };
 
   const handlePrevTrack = () => {
-    if (queue.length === 0) return;
-    let prevIdx = queueIndex - 1;
+    const currentQueue = queueRef.current;
+    const currentIdx = queueIndexRef.current;
+    if (!currentQueue || currentQueue.length === 0) return;
+    let prevIdx = currentIdx - 1;
     if (prevIdx >= 0) {
       setQueueIndex(prevIdx);
-      handlePlayFullSong(queue[prevIdx]);
+      queueIndexRef.current = prevIdx;
+      handlePlayFullSong(currentQueue[prevIdx], bitrate, false);
     }
   };
 
@@ -2359,14 +2455,15 @@ export default function App() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {Object.values(downloads)
-                    .sort((a, b) => new Date(b.downloadedAt || 0) - new Date(a.downloadedAt || 0))
-                    .map((song, idx) => (
+                  {(() => {
+                    const sortedDownloads = Object.values(downloads)
+                      .sort((a, b) => new Date(b.downloadedAt || 0) - new Date(a.downloadedAt || 0));
+                    return sortedDownloads.map((song, idx) => (
                       <div key={song.id || idx} className="relative">
                         <TrackRow
                           song={song}
                           index={idx}
-                          onPlay={() => handlePlayFullSong(song)}
+                          onPlay={() => handlePlaySongFromList(sortedDownloads, idx)}
                           onAddToQueue={handleAddToQueue}
                           onToggleFavorite={toggleFavorite}
                           onOpenAddToPlaylist={(songItem) => {
@@ -2406,7 +2503,8 @@ export default function App() {
                           )}
                         </div>
                       </div>
-                    ))}
+                    ));
+                  })()}
                 </div>
               )}
             </div>
@@ -2646,15 +2744,35 @@ export default function App() {
                           {pl.songs?.length || 0} Tracks
                         </p>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeletePlaylist(pl._id);
-                        }}
-                        className="p-2 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-900 transition"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {(pl.songs || []).length > 0 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const sanitized = (pl.songs || []).map(sanitizeTrack);
+                              setSelectedPlaylistDetail({
+                                ...pl,
+                                songs: sanitized
+                              });
+                              handlePlayAllTracks(sanitized);
+                            }}
+                            className="w-9 h-9 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center justify-center shadow-lg transition transform hover:scale-110 active:scale-95 shrink-0"
+                            title={`Play all ${(pl.songs || []).length} songs in ${pl.name}`}
+                          >
+                            <Play className="w-4 h-4 fill-current ml-0.5" />
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeletePlaylist(pl._id);
+                          }}
+                          className="p-2 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-900 transition"
+                          title="Delete playlist"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

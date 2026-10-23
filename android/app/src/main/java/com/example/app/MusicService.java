@@ -162,11 +162,12 @@ public class MusicService extends Service {
         this.currentPositionMs = positionMs;
         this.currentDurationMs = durationMs;
 
+        // Call showNotification immediately with text details so Title & Artist show up INSTANTLY
+        showNotification(currentCoverBitmap);
+
         if (coverUrl != null && !coverUrl.trim().isEmpty() && !coverUrl.equals(this.currentCoverUrl)) {
             this.currentCoverUrl = coverUrl;
             fetchBitmapAndNotify(coverUrl);
-        } else {
-            showNotification(currentCoverBitmap);
         }
     }
 
@@ -174,21 +175,30 @@ public class MusicService extends Service {
         imageExecutor.execute(() -> {
             Bitmap bitmap = null;
             try {
-                URL url = new URL(urlString);
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                connection.setInstanceFollowRedirects(true);
-                connection.setDoInput(true);
-                connection.setConnectTimeout(6000);
-                connection.setReadTimeout(6000);
-                connection.connect();
-                InputStream input = connection.getInputStream();
-                bitmap = BitmapFactory.decodeStream(input);
+                if (urlString.startsWith("file://") || urlString.startsWith("/")) {
+                    String cleanPath = urlString.replace("file://", "");
+                    bitmap = BitmapFactory.decodeFile(cleanPath);
+                } else if (urlString.startsWith("content://")) {
+                    InputStream input = getContentResolver().openInputStream(android.net.Uri.parse(urlString));
+                    bitmap = BitmapFactory.decodeStream(input);
+                } else {
+                    URL url = new URL(urlString);
+                    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                    connection.setInstanceFollowRedirects(true);
+                    connection.setDoInput(true);
+                    connection.setConnectTimeout(5000);
+                    connection.setReadTimeout(5000);
+                    connection.connect();
+                    InputStream input = connection.getInputStream();
+                    bitmap = BitmapFactory.decodeStream(input);
+                }
             } catch (Exception e) {
                 e.printStackTrace();
             }
-            final Bitmap finalBitmap = bitmap;
-            currentCoverBitmap = finalBitmap;
-            showNotification(finalBitmap);
+            if (bitmap != null) {
+                currentCoverBitmap = bitmap;
+                showNotification(currentCoverBitmap);
+            }
         });
     }
 
