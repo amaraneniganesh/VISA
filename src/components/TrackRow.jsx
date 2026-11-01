@@ -11,6 +11,7 @@ export default function TrackRow({
   onToggleFavorite,
   onDownload,
   onDeleteDownload,
+  onRemoveFromPlaylist,
   isDownloaded,
   isDownloading,
   isFavorite,
@@ -216,6 +217,20 @@ export default function TrackRow({
           </button>
         )}
 
+        {/* Desktop Remove from Playlist Button */}
+        {onRemoveFromPlaylist && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemoveFromPlaylist(song);
+            }}
+            className="p-1.5 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition hidden md:block"
+            title="Remove from playlist"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+
         {/* Mobile 3-Dots Action Menu Trigger (< md) */}
         <div ref={menuRef} className="relative md:hidden">
           <button
@@ -303,6 +318,18 @@ export default function TrackRow({
                 >
                   <Trash2 className="w-4 h-4 text-rose-400" />
                   <span>Remove Download</span>
+                </button>
+              )}
+              {onRemoveFromPlaylist && (
+                <button
+                  onClick={() => {
+                    onRemoveFromPlaylist(song);
+                    setShowMobileMenu(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-400 hover:bg-slate-800 transition"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-400" />
+                  <span>Remove from Playlist</span>
                 </button>
               )}
             </div>

@@ -72,6 +72,7 @@ export default function Navbar({
 
   const hasSuggestions =
     autoSuggestions?.songs?.length > 0 ||
+    autoSuggestions?.playlists?.length > 0 ||
     autoSuggestions?.albums?.length > 0 ||
     autoSuggestions?.artists?.length > 0 ||
     searchHistory?.length > 0;
@@ -240,6 +241,36 @@ export default function Navbar({
                       </p>
                       <p className="text-[11px] text-slate-400 truncate mt-0.5">
                         {decodeHTMLEntities(album.subtitle || 'Album')}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Playlists Category */}
+            {autoSuggestions?.playlists?.length > 0 && (
+              <div className="p-2.5">
+                <span className="text-[10px] font-black tracking-wider text-teal-400 uppercase px-2.5 py-1 block">
+                  Playlists & Collections
+                </span>
+                {autoSuggestions.playlists.map((playlist) => (
+                  <div
+                    key={playlist.id}
+                    onClick={() => handleCardClick({ ...playlist, type: 'playlist' })}
+                    className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-800/90 transition cursor-pointer group"
+                  >
+                    <img
+                      src={upgradeImg(playlist.image)}
+                      alt=""
+                      className="w-10 h-10 rounded-lg object-cover bg-slate-800 shrink-0 border border-white/5"
+                    />
+                    <div className="truncate">
+                      <p className="text-xs font-bold text-slate-100 group-hover:text-teal-400 truncate">
+                        {decodeHTMLEntities(playlist.title)}
+                      </p>
+                      <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                        {decodeHTMLEntities(playlist.subtitle || 'Playlist')}
                       </p>
                     </div>
                   </div>

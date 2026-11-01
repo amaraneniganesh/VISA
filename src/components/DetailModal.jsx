@@ -1,7 +1,7 @@
 import React from 'react';
-import { X, Play, Plus, Loader2, Layers } from 'lucide-react';
+import { X, Play, Plus, Loader2, Layers, ListMusic, Clock } from 'lucide-react';
 import TrackRow from './TrackRow';
-import { decodeHTMLEntities } from '../utils/formatters';
+import { decodeHTMLEntities, formatPlaylistDuration } from '../utils/formatters';
 
 export default function DetailModal({
   selectedEntity,
@@ -68,7 +68,7 @@ export default function DetailModal({
             </span>
 
             <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tight line-clamp-2">
-              {decodeHTMLEntities(detailData?.title || selectedEntity?.title)}
+              {decodeHTMLEntities(detailData?.title || detailData?.name || selectedEntity?.title)}
             </h3>
 
             <p className="text-xs sm:text-sm text-slate-400 font-medium line-clamp-2">
@@ -77,6 +77,11 @@ export default function DetailModal({
 
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs text-slate-400 font-semibold">
               {songList.length > 0 && <span>{songList.length} Tracks</span>}
+              {songList.length > 0 && (
+                <span className="flex items-center gap-1 text-emerald-400/90 font-mono">
+                  • <Clock className="w-3 h-3 inline" /> {formatPlaylistDuration(songList)}
+                </span>
+              )}
               {detailData?.more_info?.fan_count && <span>• {detailData.more_info.fan_count} Fans</span>}
               {detailData?.year && <span>• Released {detailData.year}</span>}
             </div>
@@ -158,6 +163,68 @@ export default function DetailModal({
                     {artistMoreSongsLoading && <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />}
                     <span>Load More Artist Tracks</span>
                   </button>
+                </div>
+              )}
+
+              {/* Artist Dedicated Playlists & Hits */}
+              {isArtist && detailData?.dedicated_artist_playlist?.length > 0 && (
+                <div className="pt-6 border-t border-slate-800">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-300 mb-4 flex items-center gap-2">
+                    <ListMusic className="w-4 h-4 text-teal-400" />
+                    <span>Curated Playlists & Hits ({detailData.dedicated_artist_playlist.length})</span>
+                  </h4>
+                  <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
+                    {detailData.dedicated_artist_playlist.map((pl) => (
+                      <div
+                        key={pl.id}
+                        onClick={() => onOpenAnotherDetail({ ...pl, type: 'playlist' })}
+                        className="w-36 shrink-0 glass-card p-2.5 rounded-2xl cursor-pointer transition hover:border-emerald-500/40 group"
+                      >
+                        <img
+                          src={upgradeImg(pl.image)}
+                          alt={pl.title}
+                          className="w-full aspect-square rounded-xl object-cover mb-2 bg-slate-800 border border-white/5 group-hover:scale-105 transition"
+                        />
+                        <p className="text-xs font-bold truncate text-slate-200 group-hover:text-emerald-400">
+                          {decodeHTMLEntities(pl.title)}
+                        </p>
+                        <p className="text-[11px] truncate text-slate-400 mt-0.5">
+                          {decodeHTMLEntities(pl.subtitle || (pl.more_info?.song_count ? `${pl.more_info.song_count} Songs` : 'Playlist'))}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Artist Top Albums */}
+              {isArtist && detailData?.topAlbums?.length > 0 && (
+                <div className="pt-6 border-t border-slate-800">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-300 mb-4 flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-cyan-400" />
+                    <span>Albums ({detailData.topAlbums.length})</span>
+                  </h4>
+                  <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
+                    {detailData.topAlbums.map((alb) => (
+                      <div
+                        key={alb.id}
+                        onClick={() => onOpenAnotherDetail({ ...alb, type: 'album' })}
+                        className="w-36 shrink-0 glass-card p-2.5 rounded-2xl cursor-pointer transition hover:border-cyan-500/40 group"
+                      >
+                        <img
+                          src={upgradeImg(alb.image)}
+                          alt={alb.title}
+                          className="w-full aspect-square rounded-xl object-cover mb-2 bg-slate-800 border border-white/5 group-hover:scale-105 transition"
+                        />
+                        <p className="text-xs font-bold truncate text-slate-200 group-hover:text-cyan-400">
+                          {decodeHTMLEntities(alb.title)}
+                        </p>
+                        <p className="text-[11px] truncate text-slate-400 mt-0.5">
+                          {decodeHTMLEntities(alb.subtitle || alb.year || 'Album')}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
